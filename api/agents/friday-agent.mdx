@@ -45,14 +45,15 @@ Initializes the FridayAgent with specified planning, retrieving, and executing s
 **Example:**
 
 ```python
-from oscopilot.agents.friday_agent import FridayAgent
-from oscopilot.modules import Planner, Retriever, Executor, ToolManager
+from oscopilot import FridayAgent, ToolManager
+from oscopilot import FridayPlanner, FridayRetriever, FridayExecutor
+from oscopilot.utils import setup_config
 
-config = Config()
+config = setup_config()
 agent = FridayAgent(
-    planner=Planner,
-    retriever=Retriever,
-    executor=Executor,
+    planner=FridayPlanner,
+    retriever=FridayRetriever,
+    executor=FridayExecutor,
     Tool_Manager=ToolManager,
     config=config
 )
