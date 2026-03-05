@@ -1,0 +1,118 @@
+---
+title: "Introduction to OS-Copilot"
+description: "Learn about OS-Copilot, an open-source framework for building generalist computer agents that can automate tasks across your operating system"
+---
+
+## What is OS-Copilot?
+
+OS-Copilot is an open-source library designed to build generalist agents capable of automatically interfacing with comprehensive elements in an operating system (OS). It provides a unified framework for agents to interact with:
+
+- **Web browsers** and online content
+- **Code terminals** and shell commands
+- **Files and directories** across your system
+- **Multimedia** content (images, audio, documents)
+- **Third-party applications** and APIs
+
+## Meet FRIDAY: Your Self-Improving AI Assistant
+
+Built on the OS-Copilot framework, **FRIDAY** is a self-improving AI assistant capable of solving general computer tasks. FRIDAY can understand your natural language requests and execute them by breaking them down into manageable sub-tasks.
+
+<Note>
+FRIDAY currently supports single-round conversation. Multi-round conversation support is under development.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Autonomous Task Execution" icon="robot">
+    Automatically decomposes complex tasks into sub-tasks and executes them using appropriate tools
+  </Card>
+  <Card title="Self-Learning Capability" icon="brain">
+    Improves over time by storing successful code executions in a tool repository for future reuse
+  </Card>
+  <Card title="Multi-Tool Integration" icon="wrench">
+    Seamlessly integrates Python scripts, shell commands, APIs, and third-party applications
+  </Card>
+  <Card title="Error Recovery" icon="arrows-rotate">
+    Automatically detects execution errors and attempts repairs or replanning to complete tasks
+  </Card>
+</CardGroup>
+
+## How OS-Copilot Works
+
+OS-Copilot uses a sophisticated agent architecture with three core modules:
+
+### 1. Planner Module
+Decomposes high-level tasks into executable sub-tasks by analyzing the request and available tools.
+
+### 2. Retriever Module
+Finds relevant tools and code from the tool repository using semantic search to assist with task execution.
+
+### 3. Executor Module
+Generates and executes code (Python, Shell, AppleScript) to accomplish sub-tasks, with built-in error handling and repair mechanisms.
+
+<Info>
+These modules work together in a feedback loop: planning → retrieval → execution → refinement, continuing until the task is completed or reaches maximum iterations.
+</Info>
+
+## Example Use Cases
+
+- **File Management**: "Copy all text files containing 'agent' to a new folder named 'agents'"
+- **Data Processing**: "Extract data from this Excel file and create a summary chart"
+- **Web Automation**: "Search for the latest news on AI and save the top 5 articles"
+- **System Operations**: "Monitor CPU usage and send an alert if it exceeds 80%"
+
+## Architecture Overview
+
+The FridayAgent orchestrates task execution through these key components:
+
+```python
+from oscopilot import FridayAgent
+from oscopilot import ToolManager
+from oscopilot import FridayExecutor, FridayPlanner, FridayRetriever
+
+# Initialize the agent with all modules
+agent = FridayAgent(
+    FridayPlanner,    # Task decomposition
+    FridayRetriever,  # Tool retrieval
+    FridayExecutor,   # Code execution
+    ToolManager,      # Tool management
+    config=args
+)
+
+# Run a task
+agent.run(task="Your natural language request here")
+```
+
+## Platform Support
+
+<Warning>
+OS-Copilot currently supports **Linux** and **macOS** operating systems. Windows support is not available at this time.
+</Warning>
+
+- **Operating Systems**: Linux, macOS
+- **Python Version**: 3.10 or higher
+- **LLM Support**: OpenAI GPT models, Llama 3 (via Ollama)
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Set up OS-Copilot on your system
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Run your first agent in minutes
+  </Card>
+</CardGroup>
+
+## Community and Support
+
+Join our growing community:
+
+- **Discord**: [Real-time discussions and support](https://discord.com/invite/rXS2XbgfaD)
+- **Twitter**: [Latest updates](https://twitter.com/oscopilot)
+- **GitHub**: [Source code and contributions](https://github.com/OS-Copilot/OS-Copilot)
+
+<Info>
+OS-Copilot is under active development. Check the [GitHub repository](https://github.com/OS-Copilot/OS-Copilot) for the latest features and updates.
+</Info>

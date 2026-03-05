@@ -1,0 +1,187 @@
+---
+title: "BaseAgent"
+description: "Foundational base class for all agent types in OS-Copilot"
+---
+
+## Overview
+
+The `BaseAgent` class serves as the foundational class for all agent types within the OS-Copilot system. It initializes core attributes common across different agents and provides utility methods for information extraction.
+
+## Class Definition
+
+```python
+from oscopilot.agents.base_agent import BaseAgent
+```
+
+## Constructor
+
+### `__init__()`
+
+Initializes a new instance of BaseAgent with default values for its attributes.
+
+**Example:**
+
+```python
+from oscopilot.agents.base_agent import BaseAgent
+
+class CustomAgent(BaseAgent):
+    def __init__(self):
+        super().__init__()
+        # Add custom initialization
+```
+
+## Attributes
+
+<ParamField path="system_version" type="str">
+  The operating system version detected at initialization
+</ParamField>
+
+## Methods
+
+### `extract_information(message, begin_str='[BEGIN]', end_str='[END]')`
+
+Extracts substrings from a message that are enclosed within specified begin and end markers.
+
+<ParamField path="message" type="str" required>
+  The message from which information is to be extracted
+</ParamField>
+
+<ParamField path="begin_str" type="str" default="[BEGIN]">
+  The marker indicating the start of the information to be extracted
+</ParamField>
+
+<ParamField path="end_str" type="str" default="[END]">
+  The marker indicating the end of the information to be extracted
+</ParamField>
+
+<ResponseField name="return" type="list[str]">
+  A list of extracted substrings found between the begin and end markers
+</ResponseField>
+
+**Example:**
+
+```python
+agent = BaseAgent()
+message = "Some text [BEGIN]important data[END] more text [BEGIN]more data[END]"
+result = agent.extract_information(message)
+# Returns: ['important data', 'more data']
+```
+
+**Use Cases:**
+- Extracting structured data from LLM responses
+- Parsing formatted messages with delimiters
+- Extracting multiple sections of information from a single string
+
+### `extract_json_from_string(text)`
+
+Identifies and extracts JSON data embedded within a given string. Specifically looks for JSON blocks marked with ` ```json``` ` notation.
+
+<ParamField path="text" type="str" required>
+  The text containing the JSON data to be extracted
+</ParamField>
+
+<ResponseField name="return" type="dict | str">
+  Returns:
+  - `dict`: The parsed JSON data as a dictionary if successful
+  - `str`: An error message indicating a parsing error or that no JSON data was found
+</ResponseField>
+
+**Example:**
+
+```python
+agent = BaseAgent()
+text = """
+Here is some data:
+```json
+{
+    "name": "example",
+    "value": 42
+}
+```
+"""
+result = agent.extract_json_from_string(text)
+# Returns a dictionary with name and value keys
+```
+
+**Error Handling:**
+
+```python
+# No JSON found
+result = agent.extract_json_from_string("No JSON here")
+# Returns: "No JSON data found in the string."
+
+# Invalid JSON with parse error
+text_invalid = "```json\n{invalid}\n```"
+result = agent.extract_json_from_string(text_invalid)
+# Returns: "Error parsing JSON data: ..."
+```
+
+## Extending BaseAgent
+
+To create a custom agent, inherit from `BaseAgent` and implement your specific functionality:
+
+```python
+from oscopilot.agents.base_agent import BaseAgent
+
+class MyCustomAgent(BaseAgent):
+    def __init__(self, custom_config):
+        super().__init__()
+        self.custom_config = custom_config
+        # Initialize custom attributes
+    
+    def run(self, task):
+        """Implement your task execution logic"""
+        # Use inherited utility methods
+        extracted_data = self.extract_information(task)
+        # Custom logic here
+        pass
+```
+
+## Common Patterns
+
+### Extracting Structured Data
+
+```python
+class DataAgent(BaseAgent):
+    def process_response(self, llm_response):
+        # Extract JSON configuration
+        config = self.extract_json_from_string(llm_response)
+        
+        # Extract marked sections
+        code_blocks = self.extract_information(
+            llm_response,
+            begin_str='[CODE]',
+            end_str='[/CODE]'
+        )
+        
+        return config, code_blocks
+```
+
+### OS Version Checking
+
+```python
+class OSAwareAgent(BaseAgent):
+    def __init__(self):
+        super().__init__()
+        print(f"Running on: {self.system_version}")
+        
+        # Implement OS-specific logic
+        if 'Windows' in self.system_version:
+            self.setup_windows()
+        elif 'Linux' in self.system_version:
+            self.setup_linux()
+```
+
+## Design Philosophy
+
+The `BaseAgent` class follows these principles:
+
+1. **Minimal Core**: Provides only essential functionality shared across all agents
+2. **Utility Focus**: Offers common utility methods for text processing
+3. **Extensibility**: Easy to extend for specific agent implementations
+4. **OS Awareness**: Automatically detects and stores system version information
+
+## Related Classes
+
+- [FridayAgent](/api/agents/friday-agent): Main orchestration agent that extends BaseAgent
+- [SelfLearning](/api/agents/self-learning): Self-learning functionality for agents

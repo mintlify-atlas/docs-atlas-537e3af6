@@ -1,0 +1,276 @@
+---
+title: 'ToolManager'
+description: 'Manage tools within the OS-Copilot repository'
+icon: 'toolbox'
+---
+
+## Overview
+
+The `ToolManager` class provides a comprehensive interface for managing a collection of tools in OS-Copilot. It handles adding, retrieving, and deleting tools, with support for vector-based similarity search using a Chroma database.
+
+**Source:** `oscopilot/tool_repository/manager/tool_manager.py`
+
+## Class Definition
+
+```python
+class ToolManager:
+    def __init__(self, generated_tool_repo_dir=None)
+```
+
+Manages tools within a repository, including adding, deleting, and retrieving tool information. The ToolManager leverages a vector database for efficient retrieval of tools based on similarity searches.
+
+### Parameters
+
+<ParamField path="generated_tool_repo_dir" type="str" default="None">
+  The directory path where the tools' information is stored, including code files, description files, and a JSON file containing the tools' metadata.
+</ParamField>
+
+### Attributes
+
+<ResponseField name="generated_tools" type="dict">
+  Stores the mapping relationship between tool names and their information (code, description).
+</ResponseField>
+
+<ResponseField name="generated_tool_repo_dir" type="str">
+  The directory path where the tools' information is stored.
+</ResponseField>
+
+<ResponseField name="vectordb_path" type="str">
+  The path to the vector database used for storing and retrieving tool descriptions based on similarity.
+</ResponseField>
+
+<ResponseField name="vectordb" type="Chroma">
+  An instance of the Chroma class for managing the vector database.
+</ResponseField>
+
+## Properties
+
+### programs
+
+```python
+@property
+def programs(self) -> str
+```
+
+Retrieve all the code from the code repository as a single string.
+
+**Returns:** A string containing the code of all tools, each separated by two newlines.
+
+### descriptions
+
+```python
+@property
+def descriptions(self) -> dict
+```
+
+Retrieve the descriptions of all tools in a dictionary.
+
+**Returns:** A dictionary mapping each tool name to its description.
+
+### tool_names
+
+```python
+@property
+def tool_names(self) -> KeysView[str]
+```
+
+Retrieve all tool class names from the generated tools.
+
+**Returns:** A view of the dictionary's keys which are the names of the tools.
+
+## Methods
+
+### add_new_tool
+
+```python
+def add_new_tool(self, info: dict) -> None
+```
+
+Adds a new tool to the tool manager, including updating the vector database and tool repository with the provided information.
+
+<ParamField path="info" type="dict" required>
+  A dictionary containing the tool's information, which must include:
+  - `task_name` (str): The name of the tool
+  - `code` (str): The tool's implementation code
+  - `description` (str): The tool's description
+</ParamField>
+
+**Behavior:**
+- If the tool already exists, it will be deleted and rewritten
+- Updates both the vector database and the tool dictionary
+- Persists the new tool's code and description in the repository
+- Ensures synchronization between vector database and generated tools
+
+**Example:**
+
+```python
+from oscopilot.tool_repository.manager.tool_manager import ToolManager
+
+toolManager = ToolManager(
+    generated_tool_repo_dir='oscopilot/tool_repository/generated_tools'
+)
+
+info = {
+    "task_name": "my_custom_tool",
+    "code": "def my_tool(): pass",
+    "description": "A custom tool for specific tasks"
+}
+
+toolManager.add_new_tool(info)
+```
+
+### exist_tool
+
+```python
+def exist_tool(self, tool: str) -> bool
+```
+
+Checks if a tool exists in the tool manager based on the tool name.
+
+<ParamField path="tool" type="str" required>
+  The name of the tool to check.
+</ParamField>
+
+**Returns:** `True` if the tool exists, `False` otherwise.
+
+### retrieve_tool_name
+
+```python
+def retrieve_tool_name(self, query: str, k: int = 10) -> list[str]
+```
+
+Retrieves related tool names based on a similarity search against a query.
+
+<ParamField path="query" type="str" required>
+  The query string to search for similar tools.
+</ParamField>
+
+<ParamField path="k" type="int" default="10">
+  The maximum number of similar tools to retrieve.
+</ParamField>
+
+**Returns:** A list of tool names that are most similar to the query, up to `k` tools. Returns an empty list if no tools are found or if `k` is 0.
+
+**Example:**
+
+```python
+tools = toolManager.retrieve_tool_name(
+    "Open a text file in Ubuntu", 
+    k=5
+)
+print(tools)  # ['open_text_file', 'read_file', ...]
+```
+
+### retrieve_tool_description
+
+```python
+def retrieve_tool_description(self, tool_name: list[str]) -> list[str]
+```
+
+Returns the descriptions of specified tools based on their names.
+
+<ParamField path="tool_name" type="list[str]" required>
+  A list of tool names for which descriptions are requested.
+</ParamField>
+
+**Returns:** A list containing the descriptions of the specified tools.
+
+### retrieve_tool_code
+
+```python
+def retrieve_tool_code(self, tool_name: list[str]) -> list[str]
+```
+
+Returns the code of specified tools based on their names.
+
+<ParamField path="tool_name" type="list[str]" required>
+  A list of tool names for which code snippets are requested.
+</ParamField>
+
+**Returns:** A list containing the code of the specified tools.
+
+### get_tool_code
+
+```python
+def get_tool_code(self, tool_name: str) -> str
+```
+
+Retrieve the code of a specific tool by its name.
+
+<ParamField path="tool_name" type="str" required>
+  The name of the tool for which the code is requested.
+</ParamField>
+
+**Returns:** The code of the specified tool.
+
+**Raises:** `KeyError` if the tool_name does not exist in the generated_tools dictionary.
+
+### delete_tool
+
+```python
+def delete_tool(self, tool: str) -> None
+```
+
+Deletes all information related to a specified tool from the tool manager.
+
+<ParamField path="tool" type="str" required>
+  The name of the tool to be deleted.
+</ParamField>
+
+**Behavior:**
+- Removes the tool's information from the vector database
+- Deletes the tool from the generated_tools.json file
+- Removes the tool's code file (.py)
+- Removes the tool's description file (.txt)
+- Provides console feedback for each deletion action
+
+**Example:**
+
+```python
+toolManager.delete_tool("my_custom_tool")
+```
+
+## Usage Example
+
+```python
+from oscopilot.tool_repository.manager.tool_manager import ToolManager
+
+# Initialize the tool manager
+toolManager = ToolManager(
+    generated_tool_repo_dir='oscopilot/tool_repository/generated_tools'
+)
+
+# Check if a tool exists
+if toolManager.exist_tool("web_search"):
+    print("Tool exists")
+
+# Retrieve similar tools
+tools = toolManager.retrieve_tool_name(
+    "Search the web for information",
+    k=3
+)
+
+# Get tool descriptions
+descriptions = toolManager.retrieve_tool_description(tools)
+
+# Get tool code
+code = toolManager.retrieve_tool_code(tools)
+
+# Add a new tool
+info = {
+    "task_name": "custom_search",
+    "code": "def custom_search(query): pass",
+    "description": "Custom search implementation"
+}
+toolManager.add_new_tool(info)
+
+# Delete a tool
+toolManager.delete_tool("custom_search")
+```
+
+## Notes
+
+- The class uses OpenAI's `text-embedding-ada-002` model by default for generating embeddings
+- Ensure that `OPENAI_API_KEY` and `OPENAI_ORGANIZATION` environment variables are correctly set
+- The vector database must be synchronized with the generated_tools.json file
+- Tool descriptions are extracted from docstrings in the tool's code

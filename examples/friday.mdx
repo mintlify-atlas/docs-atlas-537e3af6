@@ -1,0 +1,260 @@
+---
+title: "Light FRIDAY Agent"
+description: "Basic FRIDAY agent for general computer tasks using code execution"
+---
+
+Light FRIDAY is a simplified version of the FRIDAY agent that executes computer tasks by generating and running code. It's inspired by Open Interpreter and provides a lightweight interface for automating tasks on your system.
+
+## Overview
+
+Light FRIDAY is a self-improving AI assistant that:
+- Writes plans and executes code to complete tasks
+- Supports Python and Bash code execution
+- Runs code directly on your machine with full permissions
+- Iteratively refines solutions based on execution results
+
+## Basic Usage
+
+The Light FRIDAY agent is available in `examples/light_friday/light_friday.py`.
+
+### Running Light FRIDAY
+
+```python
+from oscopilot.utils import setup_config, setup_pre_run
+from oscopilot.modules.base_module import BaseModule
+
+# Set up configuration
+args = setup_config()
+if not args.query:
+    args.query = "Plot AAPL and META's normalized stock prices"
+task = setup_pre_run(args)
+
+# Initialize and run Light FRIDAY
+light_friday = LightFriday(args)
+light_friday.run(task)
+```
+
+### Environment Setup
+
+Before running, configure your environment variables in `.env`:
+
+```bash
+MODEL_NAME=gpt-4
+OPENAI_API_KEY=your_api_key_here
+OPENAI_ORGANIZATION=your_org_here
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+## Code Execution Flow
+
+Light FRIDAY follows this execution pattern:
+
+1. **Planning**: Creates a plan to accomplish the task
+2. **Code Generation**: Writes code blocks (Python or Bash) to execute steps
+3. **Execution**: Runs code on your machine and captures results
+4. **Iteration**: Reviews results and continues until task is complete
+
+<CodeGroup>
+
+```python Python Execution
+# Light FRIDAY executes Python code directly
+code = """
+import yfinance as yf
+import matplotlib.pyplot as plt
+
+# Download stock data
+aapl = yf.download('AAPL', start='2023-01-01')
+meta = yf.download('META', start='2023-01-01')
+
+# Normalize and plot
+plt.plot(aapl['Close'] / aapl['Close'][0], label='AAPL')
+plt.plot(meta['Close'] / meta['Close'][0], label='META')
+plt.legend()
+plt.savefig('stocks.png')
+"""
+
+state = environment.step('Python', code)
+print(state.result)  # Execution output
+```
+
+```bash Bash Execution
+# Light FRIDAY can also execute Bash commands
+code = """
+echo "Checking system information"
+uname -a
+df -h
+"""
+
+state = environment.step('Bash', code)
+print(state.result)  # Command output
+```
+
+</CodeGroup>
+
+## Implementation Details
+
+### LightFriday Class
+
+The core implementation extends `BaseModule`:
+
+```python
+class LightFriday(BaseModule):
+    def __init__(self, args):
+        super().__init__()
+        self.args = args
+    
+    def execute_tool(self, code, lang):
+        """Execute code and return results"""
+        state = self.environment.step(lang, code)
+        return_info = ''
+        if state.result != None and state.result.strip() != '':
+            return_info = '**Execution Result** :' + state.result.strip()
+        if state.error != None and state.error.strip() != '':
+            return_info = '\n**Execution Error** :' + state.error.strip()
+        return return_info.strip()
+```
+
+See the full implementation at `examples/light_friday/light_friday.py:47-60`.
+
+### System Prompt
+
+Light FRIDAY uses a specialized system prompt that instructs it to:
+- Create plans with minimal steps
+- Execute code in small, incremental blocks
+- Use `print` or `echo` to output intermediate information
+- Continue iterating until the task is complete
+
+<Note>
+The agent has "extreme short-term memory loss" by design, so it recaps the plan between each code block to maintain context.
+</Note>
+
+## Code Language Detection
+
+Light FRIDAY automatically detects the programming language from code blocks:
+
+```python
+def extract_code(input_string):
+    pattern = r"```(\w+)?\s*(.*?)```"  
+    matches = re.findall(pattern, input_string, re.DOTALL)
+
+    if matches:
+        language, code = matches[0]
+        if not language:
+            # Auto-detect language
+            if re.search("python", code.lower()) or re.search(r"import\s+\w+", code):
+                language = "Python"
+            elif re.search("bash", code.lower()) or re.search(r"echo", code):
+                language = "Bash"
+        return code.strip(), language
+    return None, None
+```
+
+See `examples/light_friday/light_friday.py:29-44` for the complete function.
+
+## Example Tasks
+
+<AccordionGroup>
+
+<Accordion title="Stock Price Analysis">
+
+```python
+args.query = "Plot AAPL and META's normalized stock prices"
+light_friday = LightFriday(args)
+light_friday.run(args.query)
+```
+
+**Expected behavior:**
+1. Downloads stock data using yfinance
+2. Normalizes prices to starting value
+3. Creates comparative plot
+4. Saves visualization to file
+
+</Accordion>
+
+<Accordion title="File System Operations">
+
+```python
+args.query = "Create a backup of all Python files in the current directory"
+light_friday = LightFriday(args)
+light_friday.run(args.query)
+```
+
+**Expected behavior:**
+1. Lists all .py files in current directory
+2. Creates backup directory
+3. Copies files to backup location
+4. Confirms completion
+
+</Accordion>
+
+<Accordion title="Data Processing">
+
+```python
+args.query = "Read data.csv, calculate summary statistics, and export to report.txt"
+light_friday = LightFriday(args)
+light_friday.run(args.query)
+```
+
+**Expected behavior:**
+1. Loads CSV data with pandas
+2. Calculates mean, median, std dev
+3. Formats results as text report
+4. Writes to report.txt
+
+</Accordion>
+
+</AccordionGroup>
+
+## Execution Completion
+
+The agent automatically determines when to stop by checking for completion signals:
+
+```python
+if 'Execution Complete' in response or 'Execution Interrupted' in response:
+    break
+```
+
+- **Execution Complete**: Task successfully finished
+- **Execution Interrupted**: Task cannot proceed, with explanation and possible solutions
+
+See the main loop at `examples/light_friday/light_friday.py:91-110`.
+
+## Best Practices
+
+<CardGroup cols={2}>
+
+<Card title="Stateful Languages" icon="python">
+For Python, JavaScript, and Shell, execute code in small blocks. Print intermediate results to inform next steps.
+</Card>
+
+<Card title="Package Installation" icon="box">
+Light FRIDAY can install packages as needed:
+```python
+import subprocess
+subprocess.check_call(['pip', 'install', 'package-name'])
+```
+</Card>
+
+<Card title="File References" icon="file">
+When users mention filenames, Light FRIDAY assumes they're in the current working directory.
+</Card>
+
+<Card title="Data Exchange" icon="exchange">
+To share data between languages, save to txt or JSON files.
+</Card>
+
+</CardGroup>
+
+## Limitations
+
+<Warning>
+- **Single-round conversation**: FRIDAY currently only supports single-round conversations
+- **Full system access**: Code executes with your user permissions
+- **No HTML state**: HTML starts from scratch each execution
+</Warning>
+
+## Related
+
+- [FRIDAY Vision](/examples/friday-vision) - Vision-enabled FRIDAY with screenshot analysis
+- [SheetCopilot](/examples/sheet-copilot) - Specialized agent for Excel tasks
+- [Getting Started](/quickstart) - Initial setup and configuration

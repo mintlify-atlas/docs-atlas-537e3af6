@@ -1,0 +1,498 @@
+---
+title: 'FridayExecutor'
+description: 'Execute tools and manage tool execution lifecycle'
+---
+
+## Overview
+
+The `FridayExecutor` class is a module within the system responsible for executing tools based on prompts and maintaining the tool library. It focuses on the practical execution of tools determined by the system.
+
+The executor utilizes a language learning model (LLM) in conjunction with an execution environment and a tool library to carry out tools. It handles code generation, execution, error analysis, tool repair, and tool storage operations.
+
+## Class Definition
+
+```python
+class FridayExecutor(BaseModule)
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:12`
+
+### Constructor
+
+```python
+def __init__(self, prompt, tool_manager, max_iter=3)
+```
+
+<ParamField path="prompt" type="dict" required>
+  Dictionary containing system and user prompts for various executor operations
+</ParamField>
+
+<ParamField path="tool_manager" type="object" required>
+  Instance of the tool manager to handle tool library interactions
+</ParamField>
+
+<ParamField path="max_iter" type="int" default="3">
+  Maximum number of iterations for tool repair attempts
+</ParamField>
+
+### Attributes
+
+<ResponseField name="prompt" type="dict">
+  Prompt templates for LLM interactions during tool generation and execution
+</ResponseField>
+
+<ResponseField name="tool_manager" type="object">
+  The tool manager instance for accessing and storing tools
+</ResponseField>
+
+<ResponseField name="max_iter" type="int">
+  Maximum iterations for retry mechanisms
+</ResponseField>
+
+<ResponseField name="open_api_doc_path" type="str">
+  Path to the OpenAPI documentation file
+</ResponseField>
+
+<ResponseField name="open_api_doc" type="dict">
+  Loaded OpenAPI documentation for API tool execution
+</ResponseField>
+
+## Methods
+
+### generate_tool()
+
+Generates executable code and invocation logic for a specified tool.
+
+```python
+@api_exception_mechanism(max_retries=3)
+def generate_tool(self, task_name, task_description, tool_type, pre_tasks_info, relevant_code)
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:33`
+
+This method constructs a message to generate tool code capable of completing the specified task, taking into account any prerequisite task information and relevant code snippets. It then formats this message for processing by the language learning model (LLM) to generate the tool code.
+
+<ParamField path="task_name" type="str" required>
+  The name of the task for which tool code is being generated
+</ParamField>
+
+<ParamField path="task_description" type="str" required>
+  A description of the task, detailing what the tool aims to accomplish
+</ParamField>
+
+<ParamField path="tool_type" type="str" required>
+  The type of tool being generated: 'Python', 'Shell', or 'AppleScript'
+</ParamField>
+
+<ParamField path="pre_tasks_info" type="dict" required>
+  Information about tasks that are prerequisites for the current task, including their descriptions and return values
+</ParamField>
+
+<ParamField path="relevant_code" type="dict" required>
+  A dictionary of code snippets relevant to the current task, possibly including code from prerequisite tasks
+</ParamField>
+
+**Returns:**
+- `tuple`: A tuple containing:
+  - `code (str)`: The generated code for the tool
+  - `invoke (str)`: The specific logic or command to invoke the generated tool
+
+**Example:**
+
+```python
+executor = FridayExecutor(prompt_config, tool_manager)
+
+code, invoke = executor.generate_tool(
+    task_name="read_csv_file",
+    task_description="Read a CSV file and return its contents as a dictionary",
+    tool_type="Python",
+    pre_tasks_info={},
+    relevant_code={}
+)
+
+print(f"Generated code:\n{code}")
+print(f"Invocation: {invoke}")
+```
+
+---
+
+### execute_tool()
+
+Executes a given tool code and returns the execution state.
+
+```python
+def execute_tool(self, code, invoke, node_type)
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:84`
+
+This method handles the execution of tool code based on its node type. For code tools, it appends additional instructions to print the execution result within designated markers. It then passes the modified code for execution in the environment.
+
+<ParamField path="code" type="str" required>
+  The Python code to be executed as part of the tool
+</ParamField>
+
+<ParamField path="invoke" type="str" required>
+  The specific command or function call that triggers the tool within the code
+</ParamField>
+
+<ParamField path="node_type" type="str" required>
+  The type of the tool, determining how the tool is executed (e.g., 'Python', 'Shell')
+</ParamField>
+
+**Returns:**
+- `state`: The state object returned by the environment after executing the tool. This object contains details about the execution's outcome, including any results or errors
+
+**Example:**
+
+```python
+state = executor.execute_tool(
+    code="""def read_file(path):\n    with open(path, 'r') as f:\n        return f.read()""",
+    invoke="read_file('/tmp/data.txt')",
+    node_type="Python"
+)
+
+print(f"Result: {state.result}")
+print(f"Error: {state.error}")
+```
+
+---
+
+### judge_tool()
+
+Evaluates the outcome of an executed tool to determine its success in completing a task.
+
+```python
+@api_exception_mechanism(max_retries=3)
+def judge_tool(self, code, task_description, state, next_action)
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:132`
+
+This method formulates and sends a judgment request to the language learning model (LLM) based on the executed tool's code, the task description, the execution state, and the expected next tool. It then parses the LLM's response to determine the tool's success.
+
+<ParamField path="code" type="str" required>
+  The code of the tool that was executed
+</ParamField>
+
+<ParamField path="task_description" type="str" required>
+  The description of the task the tool was intended to complete
+</ParamField>
+
+<ParamField path="state" type="object" required>
+  The state object returned by the environment after executing the tool, containing execution results
+</ParamField>
+
+<ParamField path="next_action" type="str" required>
+  The name of the next expected tool in the sequence
+</ParamField>
+
+**Returns:**
+- `tuple`: A tuple containing:
+  - `reasoning (str)`: The LLM's reasoning behind the judgment
+  - `judge (bool)`: The LLM's judgment on whether the tool successfully completed the task
+  - `score (float)`: A score representing the effectiveness of the tool
+
+**Example:**
+
+```python
+reasoning, success, score = executor.judge_tool(
+    code=generated_code,
+    task_description="Extract data from CSV file",
+    state=execution_state,
+    next_action="process_data"
+)
+
+print(f"Success: {success}, Score: {score}")
+print(f"Reasoning: {reasoning}")
+```
+
+---
+
+### repair_tool()
+
+Modifies or corrects the code of a tool based on feedback to better complete a task.
+
+```python
+@api_exception_mechanism(max_retries=3)
+def repair_tool(self, current_code, task_description, tool_type, state, critique, pre_tasks_info)
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:180`
+
+This method sends an amendment request to the LLM, including details about the current code, task description, execution state, critique of the tool's outcome, and information about prerequisite tasks. It aims to generate a revised version of the code that addresses any identified issues.
+
+<ParamField path="current_code" type="str" required>
+  The original code of the tool that requires amendment
+</ParamField>
+
+<ParamField path="task_description" type="str" required>
+  The description of the task the tool is intended to complete
+</ParamField>
+
+<ParamField path="tool_type" type="str" required>
+  The type of tool being amended: 'Python', 'Shell', or 'AppleScript'
+</ParamField>
+
+<ParamField path="state" type="object" required>
+  The state object containing details about the tool's execution outcome
+</ParamField>
+
+<ParamField path="critique" type="str" required>
+  Feedback or critique on the tool's execution, used to guide the amendment
+</ParamField>
+
+<ParamField path="pre_tasks_info" type="dict" required>
+  Information about tasks that are prerequisites for the current task
+</ParamField>
+
+**Returns:**
+- `tuple`: A tuple containing:
+  - `new_code (str)`: The amended code for the tool
+  - `invoke (str)`: The command or logic to invoke the amended tool
+
+**Example:**
+
+```python
+new_code, new_invoke = executor.repair_tool(
+    current_code=failing_code,
+    task_description="Parse JSON data",
+    tool_type="Python",
+    state=error_state,
+    critique="Code fails when JSON contains special characters",
+    pre_tasks_info={}
+)
+```
+
+---
+
+### analysis_tool()
+
+Analyzes the execution outcome of a tool to determine the nature of any errors.
+
+```python
+@api_exception_mechanism(max_retries=3)
+def analysis_tool(self, code, task_description, state)
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:234`
+
+This method evaluates the execution state of a tool, specifically looking for errors. Based on the analysis, it determines whether the error is environmental and requires new operations (handled by the planning module) or is amendable via the `repair_tool` method.
+
+<ParamField path="code" type="str" required>
+  The code that was executed for the tool
+</ParamField>
+
+<ParamField path="task_description" type="str" required>
+  The description of the task associated with the tool
+</ParamField>
+
+<ParamField path="state" type="object" required>
+  The state object containing the result of the tool's execution, including any errors
+</ParamField>
+
+**Returns:**
+- `tuple`: A tuple containing:
+  - `reasoning (str)`: The analysis's reasoning regarding the nature of the error
+  - `type (str)`: The type of error identified ('environmental' for new operations, 'amendable' for corrections)
+
+**Example:**
+
+```python
+reasoning, error_type = executor.analysis_tool(
+    code=failed_code,
+    task_description="Write data to file",
+    state=error_state
+)
+
+if error_type == "environmental":
+    # Needs replanning
+    planner.replan_task(...)
+elif error_type == "amendable":
+    # Can be fixed by repair_tool
+    executor.repair_tool(...)
+```
+
+---
+
+### store_tool()
+
+Stores the provided tool and its code in the tool library.
+
+```python
+def store_tool(self, tool, code)
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:273`
+
+If the specified tool does not already exist in the tool library, this method proceeds to store the tool's code, arguments description, and other relevant information. It involves saving these details into JSON files and updating the tool library database.
+
+<ParamField path="tool" type="str" required>
+  The name of the tool to be stored
+</ParamField>
+
+<ParamField path="code" type="str" required>
+  The executable code associated with the tool
+</ParamField>
+
+**Side Effects:**
+- Adds a new tool to the tool library if it doesn't already exist
+- Saves tool details to the filesystem and updates the tool library's database
+- Outputs a message if the tool already exists in the library
+
+**Example:**
+
+```python
+executor.store_tool(
+    tool="csv_reader",
+    code="""class CSVReader:\n    def read(self, path):\n        import csv\n        with open(path) as f:\n            return list(csv.DictReader(f))"""
+)
+```
+
+---
+
+### api_tool()
+
+Executes a task by calling an API tool with the provided description and context.
+
+```python
+@api_exception_mechanism(max_retries=3)
+def api_tool(self, description, api_path, context="No context provided.")
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:307`
+
+This method formats a message to generate executable code for an API call based on the provided description and context. It sends this message to the language learning model (LLM), extracts the executable Python code from the LLM's response, and returns this code.
+
+<ParamField path="description" type="str" required>
+  A description of the task to be performed by the API call
+</ParamField>
+
+<ParamField path="api_path" type="str" required>
+  The path or endpoint of the API to be called
+</ParamField>
+
+<ParamField path="context" type="str" default="No context provided.">
+  Additional context to be included in the API call
+</ParamField>
+
+**Returns:**
+- `str`: The generated Python code to execute the API call
+
+**Example:**
+
+```python
+api_code = executor.api_tool(
+    description="Get user profile information",
+    api_path="/api/v1/users/{user_id}",
+    context="User ID is stored in the variable user_id"
+)
+
+print(api_code)
+# Output: "import requests\nresponse = requests.get(f'/api/v1/users/{user_id}')..."
+```
+
+---
+
+### question_and_answer_tool()
+
+Answers questions based on provided context using an LLM.
+
+```python
+def question_and_answer_tool(self, context, question, current_question=None)
+```
+
+**Location:** `oscopilot/modules/executor/friday_executor.py:333`
+
+<ParamField path="context" type="str" required>
+  The context information to base the answer on
+</ParamField>
+
+<ParamField path="question" type="str" required>
+  The question to be answered
+</ParamField>
+
+<ParamField path="current_question" type="str" default="None">
+  Additional current question context
+</ParamField>
+
+**Returns:**
+- `str`: The answer generated by the LLM
+
+## Usage Example
+
+```python
+from oscopilot.modules.executor import FridayExecutor
+
+# Initialize the executor
+prompt_config = {
+    '_SYSTEM_PYTHON_SKILL_AND_INVOKE_GENERATE_PROMPT': '...',
+    '_USER_PYTHON_SKILL_AND_INVOKE_GENERATE_PROMPT': '...',
+    '_SYSTEM_TASK_JUDGE_PROMPT': '...',
+    '_USER_TASK_JUDGE_PROMPT': '...',
+    # ... other prompts
+}
+executor = FridayExecutor(
+    prompt=prompt_config,
+    tool_manager=tool_manager_instance,
+    max_iter=3
+)
+
+# Generate and execute a tool
+code, invoke = executor.generate_tool(
+    task_name="process_data",
+    task_description="Process CSV data and calculate statistics",
+    tool_type="Python",
+    pre_tasks_info={"read_file": {"description": "Read CSV", "return_val": "data"}},
+    relevant_code={}
+)
+
+# Execute the generated tool
+state = executor.execute_tool(code, invoke, "Python")
+
+# Judge the execution
+reasoning, success, score = executor.judge_tool(
+    code=code,
+    task_description="Process CSV data and calculate statistics",
+    state=state,
+    next_action="generate_report"
+)
+
+if not success:
+    # Analyze the error
+    error_reasoning, error_type = executor.analysis_tool(
+        code=code,
+        task_description="Process CSV data and calculate statistics",
+        state=state
+    )
+    
+    if error_type == "amendable":
+        # Repair the tool
+        new_code, new_invoke = executor.repair_tool(
+            current_code=code,
+            task_description="Process CSV data and calculate statistics",
+            tool_type="Python",
+            state=state,
+            critique=reasoning,
+            pre_tasks_info={}
+        )
+        # Try again with repaired code
+        state = executor.execute_tool(new_code, new_invoke, "Python")
+
+if success and score > 0.8:
+    # Store successful tool for future use
+    executor.store_tool("process_data", code)
+```
+
+## Execution Lifecycle
+
+The typical execution lifecycle managed by `FridayExecutor`:
+
+1. **Generation**: `generate_tool()` creates executable code based on task requirements
+2. **Execution**: `execute_tool()` runs the generated code in the environment
+3. **Judgment**: `judge_tool()` evaluates whether the execution was successful
+4. **Analysis**: If failed, `analysis_tool()` determines the error type
+5. **Repair**: If amendable, `repair_tool()` fixes the code (up to `max_iter` times)
+6. **Storage**: If successful, `store_tool()` saves the tool for future reuse
+
+This lifecycle ensures robust tool execution with automatic error handling and self-improvement capabilities.

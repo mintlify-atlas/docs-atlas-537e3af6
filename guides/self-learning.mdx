@@ -1,0 +1,360 @@
+---
+title: 'Self-Learning Mechanism'
+description: 'Enable FRIDAY to learn new skills autonomously through course-based learning'
+icon: 'graduation-cap'
+---
+
+OS-Copilot's self-learning system allows agents to autonomously learn new software packages and APIs by designing and completing courses. This enables the agent to expand its capabilities over time.
+
+## Overview
+
+The self-learning system consists of two main components:
+
+1. **SelfLearner**: Designs educational courses for learning new packages
+2. **SelfLearning**: Manages the learning process and executes courses
+
+## How It Works
+
+The self-learning process follows these steps:
+
+<Steps>
+  <Step title="Course Design">
+    The SelfLearner analyzes a software package and creates a structured course with lessons
+  </Step>
+  
+  <Step title="Lesson Execution">
+    Each lesson is executed by the agent using its normal task execution flow
+  </Step>
+  
+  <Step title="Knowledge Storage">
+    Successfully completed lessons are stored as tools in the repository
+  </Step>
+  
+  <Step title="Continuous Improvement">
+    The agent can continue learning new aspects of the software in subsequent courses
+  </Step>
+</Steps>
+
+## SelfLearning Class
+
+The main class that orchestrates the learning process:
+
+```python oscopilot/agents/self_learning.py
+class SelfLearning:
+    """
+    Facilitates self-learning for software topics by automatically 
+    generating and engaging with courses.
+    """
+    def __init__(self, agent, learner, tool_manager, config, text_extractor=None):
+        self.config = config
+        self.agent = agent  # The executing agent (e.g., FridayAgent)
+        self.learner = learner(prompt['self_learning_prompt'], tool_manager)
+        self.course = {}
+        if text_extractor:
+            self.text_extractor = text_extractor(agent)
+```
+
+## Course Structure
+
+Courses are stored as JSON with lesson names and descriptions:
+
+```json
+{
+  "lesson_1_basic_import": "Import the pandas library and create a simple DataFrame",
+  "lesson_2_read_csv": "Read a CSV file using pandas and display the first 5 rows",
+  "lesson_3_data_filtering": "Filter DataFrame rows based on column values",
+  "lesson_4_aggregation": "Perform group by operations and calculate aggregations"
+}
+```
+
+## Single-Stage Learning
+
+Learn a package through one course cycle:
+
+```python course_learning.py
+from oscopilot import FridayAgent, FridayExecutor, FridayPlanner, FridayRetriever
+from oscopilot import SelfLearner, SelfLearning, ToolManager, TextExtractor
+from oscopilot.utils import setup_config
+
+args = setup_config()
+software_name = args.software_name  # e.g., "pandas"
+package_name = args.package_name    # e.g., "DataFrame"
+demo_file_path = args.demo_file_path  # Optional demo file
+
+# Initialize agent
+friday_agent = FridayAgent(
+    FridayPlanner, 
+    FridayRetriever, 
+    FridayExecutor, 
+    ToolManager, 
+    config=args
+)
+
+# Initialize self-learning system
+self_learning = SelfLearning(
+    friday_agent, 
+    SelfLearner, 
+    ToolManager, 
+    args, 
+    TextExtractor
+)
+
+# Run single learning cycle
+self_learning.self_learning(software_name, package_name, demo_file_path)
+```
+
+This creates a course, executes all lessons, and stores the results.
+
+## Continuous Learning
+
+For ongoing learning that creates multiple courses:
+
+```python course_learning.py
+# Continuous learning mode
+self_learning.continuous_learning(software_name, package_name, demo_file_path)
+```
+
+Continuous learning:
+- Designs a new course based on previous lessons
+- Executes the new course
+- Repeats indefinitely, building on prior knowledge
+
+```python oscopilot/agents/self_learning.py
+def continuous_learning(self, software_name, package_name, demo_file_path=None):
+    """Continuously design and apply new courses"""
+    prior_course_path, file_content = self._initialize_learning(
+        software_name, package_name, demo_file_path
+    )
+
+    while True:
+        # Keep last 50 lessons as context
+        if len(self.course) > 50:
+            prior_course = json.dumps(dict(list(self.course.items())[-50:]))
+        else:
+            prior_course = json.dumps(self.course, indent=4)
+        
+        # Design new course based on prior learning
+        new_course = self.learner.design_course(
+            software_name, package_name, demo_file_path, 
+            file_content, prior_course
+        )
+        
+        # Update and execute
+        self.course.update(new_course)
+        self.learn_course(new_course)
+        save_json(prior_course_path, new_course)
+```
+
+## Course Design Process
+
+The `SelfLearner` module generates courses using LLMs:
+
+```python oscopilot/modules/learner/self_learner.py
+class SelfLearner(BaseModule):
+    def __init__(self, prompt, tool_manager):
+        super().__init__()
+        self.prompt = prompt
+        self.tool_manager = tool_manager
+        self.course = {}
+    
+    def design_course(self, software_name, package_name, demo_file_path,
+                     file_content=None, prior_course=None):
+        """Design a course based on software parameters"""
+        sys_prompt = self.prompt['_SYSTEM_COURSE_DESIGN_PROMPT']
+        user_prompt = self.prompt['_USER_COURSE_DESIGN_PROMPT'].format(
+            system_version=self.system_version,
+            software_name=software_name,
+            package_name=package_name,
+            file_content=file_content,
+            demo_file_path=demo_file_path,
+            prior_course=prior_course
+        )
+        
+        response = send_chat_prompts(sys_prompt, user_prompt, self.llm)
+        course = self.extract_json_from_string(response)
+        self.course = course
+        return self.course
+```
+
+## Executing Courses
+
+Once designed, courses are executed lesson by lesson:
+
+```python oscopilot/agents/self_learning.py
+def learn_course(self, course):
+    """Execute all lessons in a course"""
+    logging.info(f'There are {len(self.course)} lessons in the course.')
+    
+    for name, lesson in course.items():
+        logging.info(f"The current lesson is: {name}")
+        logging.info(f"The current lesson content is: {lesson}")
+        
+        # Run lesson as a normal task
+        self.agent.run(lesson)
+```
+
+Each lesson is treated as a regular task that the agent plans, executes, and refines.
+
+## Demo File Extraction
+
+Optionally provide demo files for context:
+
+```python
+def text_extract(self, demo_file_path):
+    """Extract text from demo file"""
+    file_content = self.text_extractor.extract_file_content(demo_file_path)
+    return file_content
+```
+
+This allows the learner to study example code or documentation when designing courses.
+
+## Storage and Persistence
+
+Courses are stored in the `courses/` directory:
+
+```python oscopilot/agents/self_learning.py
+def _initialize_learning(self, software_name, package_name, demo_file_path):
+    """Initialize course storage"""
+    courses_dir = get_project_root_path() + 'courses'
+    if not os.path.exists(courses_dir):
+        os.makedirs(courses_dir)
+    
+    # Course file: software_package.json
+    prior_course_path = os.path.join(
+        courses_dir, 
+        f"{software_name}_{package_name}.json"
+    )
+    
+    # Load existing course if it exists
+    if os.path.exists(prior_course_path):
+        self.course = read_json(prior_course_path)
+    else:
+        save_json(prior_course_path, {})
+    
+    return prior_course_path, file_content
+```
+
+## Complete Usage Example
+
+<CodeGroup>
+```python Single Learning Session
+from oscopilot import (
+    FridayAgent, SelfLearner, SelfLearning,
+    FridayExecutor, FridayPlanner, FridayRetriever,
+    ToolManager, TextExtractor
+)
+from oscopilot.utils import setup_config
+
+# Configure
+args = setup_config()
+args.software_name = "matplotlib"
+args.package_name = "pyplot"
+args.demo_file_path = "examples/plot_demo.py"
+
+# Setup agent and learning system
+agent = FridayAgent(
+    FridayPlanner, FridayRetriever, FridayExecutor, 
+    ToolManager, config=args
+)
+
+learning = SelfLearning(
+    agent, SelfLearner, ToolManager, args, TextExtractor
+)
+
+# Learn the package
+learning.self_learning(
+    args.software_name,
+    args.package_name, 
+    args.demo_file_path
+)
+```
+
+```python Continuous Learning
+# Same setup as above, then:
+
+learning.continuous_learning(
+    args.software_name,
+    args.package_name,
+    args.demo_file_path
+)
+
+# This runs indefinitely, designing and learning new courses
+```
+
+```python Custom Course Design
+# Design a course without executing it
+course = learning.course_design(
+    software_name="numpy",
+    package_name="array",
+    demo_file_path="examples/numpy_demo.py",
+    file_content=demo_content
+)
+
+print("Designed course:")
+for lesson_name, lesson_task in course.items():
+    print(f"  {lesson_name}: {lesson_task}")
+
+# Execute later
+learning.learn_course(course)
+```
+</CodeGroup>
+
+## Running from Command Line
+
+Use the provided script:
+
+```bash
+python course_learning.py \
+  --software_name pandas \
+  --package_name DataFrame \
+  --demo_file_path examples/pandas_demo.py
+```
+
+## Configuration Options
+
+Key configuration parameters:
+
+```python
+args = setup_config()
+
+# Learning parameters
+args.software_name = "package_to_learn"  # Required
+args.package_name = "specific_module"    # Required
+args.demo_file_path = "path/to/demo.py"  # Optional
+
+# Model configuration
+args.model_name = "gpt-4"
+args.temperature = 0.7
+
+# Execution limits
+args.max_repair_iterations = 3
+```
+
+## Best Practices
+
+1. **Start Simple**: Begin with basic packages before complex ones
+2. **Provide Demos**: Demo files significantly improve course quality
+3. **Monitor Progress**: Check the `courses/` directory to see what's been learned
+4. **Incremental Learning**: Use continuous learning to build expertise gradually
+5. **Review Courses**: Inspect generated courses before execution in production
+
+<Tip>
+Successful lessons automatically become tools in the repository, making them reusable for future tasks!
+</Tip>
+
+## Advantages of Self-Learning
+
+- **Autonomous Capability Expansion**: Agent learns without manual tool creation
+- **Contextual Learning**: Courses are designed based on actual usage patterns
+- **Cumulative Knowledge**: Each course builds on previous lessons
+- **Automatic Tool Generation**: Successful tasks become reusable tools
+
+<Warning>
+Continuous learning runs indefinitely. Make sure to implement appropriate stopping conditions for production use.
+</Warning>
+
+## Next Steps
+
+- [Build custom agents](/guides/building-agents) that leverage learned tools
+- [Manage the tool repository](/guides/adding-tools) to organize learned skills
+- [Deploy as an API](/guides/api-deployment) to use learning capabilities remotely

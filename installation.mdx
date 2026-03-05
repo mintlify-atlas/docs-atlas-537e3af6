@@ -1,0 +1,261 @@
+---
+title: "Installation"
+description: "Install OS-Copilot and set up your environment to start building generalist computer agents"
+---
+
+## System Requirements
+
+Before installing OS-Copilot, ensure your system meets these requirements:
+
+- **Operating System**: Linux or macOS (Windows is not currently supported)
+- **Python**: Version 3.10 or higher
+- **LLM API Access**: OpenAI API key (or Ollama for local models)
+
+<Warning>
+OS-Copilot interacts directly with your operating system and can modify files and system settings. Always run it in a safe environment and review the tasks before execution.
+</Warning>
+
+## Installation Methods
+
+### Method 1: Install from Source (Recommended)
+
+This method gives you access to the latest features and allows for easy customization.
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the OS-Copilot repository from GitHub:
+    
+    ```bash
+    git clone https://github.com/OS-Copilot/OS-Copilot.git
+    cd OS-Copilot
+    ```
+  </Step>
+  
+  <Step title="Create Python Environment">
+    Create a new conda environment with Python 3.10:
+    
+    ```bash
+    conda create -n oscopilot_env python=3.10 -y
+    conda activate oscopilot_env
+    ```
+    
+    <Note>
+    If you don't have conda installed, you can use `venv` instead:
+    ```bash
+    python3.10 -m venv oscopilot_env
+    source oscopilot_env/bin/activate
+    ```
+    </Note>
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Install OS-Copilot in editable mode with all dependencies:
+    
+    ```bash
+    pip install -e .
+    ```
+    
+    This command installs all required packages from `requirements.txt`, including:
+    - `openai` for LLM integration
+    - `langchain` for agent orchestration
+    - `chromadb` for vector storage
+    - `beautifulsoup4` for web scraping
+    - And many more...
+  </Step>
+  
+  <Step title="Verify Installation">
+    Verify the installation by importing the package:
+    
+    ```bash
+    python -c "from oscopilot import FridayAgent; print('Installation successful!')"
+    ```
+  </Step>
+</Steps>
+
+### Method 2: Install with pip (Alternative)
+
+If you prefer a simpler installation without cloning the repository:
+
+```bash
+conda create -n oscopilot_env python=3.10 -y
+conda activate oscopilot_env
+pip install os-copilot
+```
+
+<Note>
+The pip package may not always have the latest features. For cutting-edge functionality, use the source installation method.
+</Note>
+
+## Environment Configuration
+
+After installation, configure your environment variables for API access.
+
+<Steps>
+  <Step title="Create Environment File">
+    Copy the template environment file:
+    
+    ```bash
+    cp .env_template .env
+    ```
+  </Step>
+  
+  <Step title="Configure OpenAI API">
+    Edit the `.env` file and add your OpenAI API credentials:
+    
+    ```bash .env
+    MODEL_NAME="gpt-3.5-turbo-0125"
+    MODEL_TYPE="OpenAI"
+    OPENAI_API_KEY="sk-your-api-key-here"
+    OPENAI_ORGANIZATION="your-org-id"  # Optional
+    ```
+    
+    <Info>
+    You can get your OpenAI API key from [platform.openai.com](https://platform.openai.com/api-keys)
+    </Info>
+  </Step>
+  
+  <Step title="Optional: Configure Additional APIs">
+    OS-Copilot supports additional APIs for enhanced functionality:
+    
+    ```bash .env
+    # Bing Search (for web search capabilities)
+    BING_SUBSCRIPTION_KEY="your-bing-key"
+    BING_SEARCH_URL="https://api.bing.microsoft.com/v7.0/search"
+    
+    # WolframAlpha (for computational queries)
+    WOLFRAMALPHA_APP_ID="your-wolfram-id"
+    
+    # API Base URL (if using a proxy or VPN)
+    # API_BASE_URL="http://127.0.0.1:8079"
+    ```
+  </Step>
+</Steps>
+
+## Using Local Models (Ollama)
+
+If you prefer to use local LLMs instead of OpenAI, OS-Copilot supports Ollama:
+
+<Steps>
+  <Step title="Install Ollama">
+    Install Ollama on your system:
+    
+    ```bash
+    curl -fsSL https://ollama.com/install.sh | sh
+    ```
+  </Step>
+  
+  <Step title="Run Llama 3">
+    Start the Llama 3 model:
+    
+    ```bash
+    ollama run llama3
+    ```
+  </Step>
+  
+  <Step title="Configure Environment">
+    Update your `.env` file for Ollama:
+    
+    ```bash .env
+    MODEL_NAME="llama3"
+    MODEL_TYPE="OLLAMA"
+    EMBED_MODEL_TYPE="OLLAMA"
+    EMBED_MODEL_NAME="nomic-embed-text"
+    MODEL_SERVER="http://localhost:11434"
+    ```
+    
+    Set the no-proxy environment variable:
+    
+    ```bash
+    export NO_PROXY=localhost,127.0.0.1
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Common Installation Issues
+
+<AccordionGroup>
+  <Accordion title="Python version error">
+    **Error**: `Python 3.10 or higher is required`
+    
+    **Solution**: Check your Python version:
+    ```bash
+    python --version
+    ```
+    
+    If it's below 3.10, install Python 3.10 or higher and recreate your environment.
+  </Accordion>
+  
+  <Accordion title="Dependency conflicts">
+    **Error**: Package conflicts during `pip install`
+    
+    **Solution**: Try creating a fresh environment:
+    ```bash
+    conda deactivate
+    conda env remove -n oscopilot_env
+    conda create -n oscopilot_env python=3.10 -y
+    conda activate oscopilot_env
+    pip install -e .
+    ```
+  </Accordion>
+  
+  <Accordion title="OpenAI API authentication failed">
+    **Error**: `AuthenticationError: Incorrect API key provided`
+    
+    **Solution**: 
+    1. Verify your API key in the `.env` file
+    2. Ensure there are no extra spaces or quotes
+    3. Check that your API key is active at [platform.openai.com](https://platform.openai.com/api-keys)
+  </Accordion>
+  
+  <Accordion title="ChromaDB installation issues">
+    **Error**: Issues installing `chromadb` or `pysqlite3`
+    
+    **Solution**: Install system dependencies first:
+    
+    **On Ubuntu/Debian**:
+    ```bash
+    sudo apt-get install build-essential libsqlite3-dev
+    ```
+    
+    **On macOS**:
+    ```bash
+    brew install sqlite3
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Verifying Your Setup
+
+Once installation is complete, verify everything is working:
+
+```bash
+python -c "
+from oscopilot import FridayAgent, ToolManager
+from oscopilot import FridayExecutor, FridayPlanner, FridayRetriever
+print('✓ All imports successful')
+print('✓ OS-Copilot is ready to use')
+"
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Run your first agent and execute tasks
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts">
+    Learn about agents, planners, and executors
+  </Card>
+</CardGroup>
+
+## Keeping OS-Copilot Updated
+
+To update to the latest version:
+
+```bash
+cd OS-Copilot
+git pull origin main
+pip install -e . --upgrade
+```

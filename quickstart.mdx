@@ -1,80 +1,342 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick Start"
+description: "Get up and running with OS-Copilot in minutes. Learn how to run your first agent and execute automated tasks."
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before starting, make sure you have:
 
-### Step 1: Set up your local environment
+- Completed the [installation](/installation) steps
+- Activated your conda/virtual environment
+- Configured your `.env` file with API keys
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+## Your First Agent in 5 Minutes
+
+Let's run your first OS-Copilot agent using the included quick start script.
+
+<Steps>
+  <Step title="Navigate to the Project Directory">
+    Open your terminal and navigate to the OS-Copilot directory:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```bash
+    cd OS-Copilot
+    ```
+  </Step>
+  
+  <Step title="Activate Your Environment">
+    Activate the conda environment you created during installation:
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    ```bash
+    conda activate oscopilot_env
+    ```
+  </Step>
+  
+  <Step title="Run the Quick Start Script">
+    Execute the quick start script with the default task:
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    python quick_start.py
+    ```
+    
+    This will run a demonstration task that searches for text files containing the word "agent" and organizes them into a new folder.
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Understanding the Quick Start Script
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+Let's examine what happens when you run `quick_start.py`:
 
-### Step 3: Go live
+```python quick_start.py
+from oscopilot import FridayAgent
+from oscopilot import ToolManager
+from oscopilot import FridayExecutor, FridayPlanner, FridayRetriever
+from oscopilot.utils import setup_config, setup_pre_run
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+# Load configuration from command line and .env file
+args = setup_config()
 
-## Next steps
+# Set default task if none provided
+if not args.query:
+    args.query = "Copy any text file located in the working_dir/document directory that contains the word 'agent' to a new folder named 'agents' "
 
-Now that you have your docs running, explore these key features:
+# Prepare the task for execution
+task = setup_pre_run(args)
 
-<CardGroup cols={2}>
+# Initialize the FRIDAY agent with all modules
+agent = FridayAgent(
+    FridayPlanner,    # Decomposes tasks into sub-tasks
+    FridayRetriever,  # Finds relevant tools from repository
+    FridayExecutor,   # Executes code and handles errors
+    ToolManager,      # Manages tool storage and retrieval
+    config=args
+)
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+# Run the task
+agent.run(task=task)
+```
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+## Running Custom Tasks
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+You can run your own tasks by passing a custom query:
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+<CodeGroup>
 
-</CardGroup>
+```bash Command Line
+python quick_start.py --query "List all Python files in the current directory"
+```
+
+```bash File Management
+python quick_start.py --query "Create a backup folder and copy all .txt files into it"
+```
+
+```bash Data Processing
+python quick_start.py --query "Read data.csv and calculate the average of the 'price' column"
+```
+
+</CodeGroup>
+
+## What Happens During Execution
+
+When you run a task, FRIDAY follows this workflow:
+
+<Steps>
+  <Step title="Task Planning">
+    The **Planner** analyzes your request and breaks it down into sub-tasks:
+    
+    ```
+    The task list obtained after planning is:
+    ['search_text_files', 'filter_by_keyword', 'create_folder', 'copy_files']
+    ```
+  </Step>
+  
+  <Step title="Tool Retrieval">
+    The **Retriever** searches for relevant tools in the repository that can help execute each sub-task.
+  </Step>
+  
+  <Step title="Code Generation & Execution">
+    The **Executor** generates code for each sub-task and executes it:
+    
+    ```python
+    # Example generated code for file search
+    import os
+    import glob
+    
+    def search_text_files(directory):
+        files = glob.glob(os.path.join(directory, "*.txt"))
+        return files
+    ```
+  </Step>
+  
+  <Step title="Error Handling & Refinement">
+    If errors occur, FRIDAY automatically attempts to fix them or replans the approach:
+    
+    ```
+    current amend times: 1
+    Attempting to repair code based on error feedback...
+    ```
+  </Step>
+  
+  <Step title="Task Completion">
+    Once successful, the results are displayed:
+    
+    ```
+    The execution of the current sub task has been successfully completed.
+    ✓ Task completed successfully
+    ```
+  </Step>
+</Steps>
+
+## Expected Output
+
+When running the default task, you should see output similar to:
+
+```
+The task list obtained after planning is: ['FindTextFiles', 'FilterFilesByContent', 'CreateFolder', 'CopyFiles']
+
+Executing sub-task: FindTextFiles
+✓ Found 5 text files in working_dir/document
+
+Executing sub-task: FilterFilesByContent
+✓ Filtered to 3 files containing 'agent'
+
+Executing sub-task: CreateFolder
+✓ Created folder 'agents'
+
+Executing sub-task: CopyFiles
+✓ Copied 3 files to 'agents' folder
+
+The execution of the current sub task has been successfully completed.
+FindTextFiles has been stored in the tool repository.
+```
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Successfully executed code is automatically stored in the tool repository for future reuse, enabling FRIDAY to improve over time.
 </Note>
+
+## Advanced Usage
+
+### Custom Configuration
+
+You can customize the agent's behavior by modifying configuration parameters:
+
+```python
+from oscopilot import FridayAgent
+from oscopilot import ToolManager
+from oscopilot import FridayExecutor, FridayPlanner, FridayRetriever
+from oscopilot.utils import setup_config
+
+args = setup_config()
+
+# Customize settings
+args.max_repair_iterations = 5  # Max attempts to fix errors
+args.score = 8.0  # Minimum score to store tools
+
+agent = FridayAgent(
+    FridayPlanner,
+    FridayRetriever,
+    FridayExecutor,
+    ToolManager,
+    config=args
+)
+
+# Run with custom task
+agent.run(task="Your custom task here")
+```
+
+### Task Examples
+
+Here are some example tasks to try:
+
+<CardGroup cols={2}>
+  <Card title="File Operations">
+    ```
+    "Find all PDF files larger than 5MB and move them to a 'large_files' folder"
+    ```
+  </Card>
+  
+  <Card title="Data Analysis">
+    ```
+    "Read sales.xlsx and create a bar chart of monthly revenue"
+    ```
+  </Card>
+  
+  <Card title="System Monitoring">
+    ```
+    "Check disk usage and create a report of the top 10 largest directories"
+    ```
+  </Card>
+  
+  <Card title="Web Scraping">
+    ```
+    "Search for Python tutorials and save the URLs to a text file"
+    ```
+  </Card>
+</CardGroup>
+
+## Understanding Agent Modules
+
+The FridayAgent consists of three core modules that work together:
+
+### FridayPlanner
+
+Decomposes high-level tasks into executable sub-tasks:
+
+- Analyzes task complexity
+- Identifies required capabilities
+- Creates an execution plan
+- Handles replanning when needed
+
+### FridayRetriever
+
+Finds relevant tools and code from the repository:
+
+- Uses semantic search to match tasks with tools
+- Retrieves code examples from previous executions
+- Provides context for code generation
+
+### FridayExecutor
+
+Generates and executes code to accomplish tasks:
+
+- Supports Python, Shell, and AppleScript
+- Handles execution errors automatically
+- Attempts repairs up to `max_repair_iterations` times
+- Stores successful code in the tool repository
+
+<Info>
+These modules operate in a continuous feedback loop: **Plan → Retrieve → Execute → Judge → Repair/Replan**
+</Info>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Task fails immediately">
+    **Issue**: The task fails without attempting execution
+    
+    **Solution**:
+    - Check your `.env` file for correct API keys
+    - Verify your OpenAI API has sufficient credits
+    - Ensure the task is clearly defined and specific
+  </Accordion>
+  
+  <Accordion title="Agent gets stuck in repair loop">
+    **Issue**: The agent repeatedly tries to fix the same error
+    
+    **Solution**:
+    - The task may be too complex or ambiguous
+    - Try breaking it into smaller, more specific tasks
+    - Check if required files/directories exist
+  </Accordion>
+  
+  <Accordion title="Import errors when running">
+    **Issue**: `ModuleNotFoundError` or import errors
+    
+    **Solution**:
+    ```bash
+    conda activate oscopilot_env
+    pip install -e . --upgrade
+    ```
+  </Accordion>
+  
+  <Accordion title="Permission denied errors">
+    **Issue**: Cannot access or modify files
+    
+    **Solution**:
+    - Ensure you have write permissions in the working directory
+    - Run from a directory where you have full access
+    - Check file/folder permissions with `ls -la`
+  </Accordion>
+</AccordionGroup>
+
+## Important Notes
+
+<Warning>
+**Single-Round Conversation**: FRIDAY currently supports only single-round conversations. Each execution is independent and doesn't maintain context between runs.
+</Warning>
+
+<Warning>
+**System Access**: OS-Copilot can execute code and modify your system. Always review tasks carefully and run in a safe environment. The developers are not liable for any data loss or system changes.
+</Warning>
+
+## Next Steps
+
+Now that you've run your first agent, explore more advanced features:
+
+<CardGroup cols={2}>
+  <Card title="Add Custom Tools" icon="screwdriver-wrench" href="/guides/adding-tools">
+    Extend FRIDAY with your own custom tools
+  </Card>
+  
+  <Card title="Self-Learning" icon="graduation-cap" href="/guides/self-learning">
+    Enable FRIDAY to learn from experience
+  </Card>
+  
+  <Card title="API Services" icon="server" href="/guides/api-deployment">
+    Deploy FRIDAY as an API service
+  </Card>
+  
+  <Card title="Core Concepts" icon="book-open" href="/concepts/architecture">
+    Deep dive into OS-Copilot architecture
+  </Card>
+</CardGroup>

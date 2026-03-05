@@ -1,0 +1,338 @@
+---
+title: 'FridayPlanner'
+description: 'Plan and decompose complex tasks into executable subtasks'
+---
+
+## Overview
+
+The `FridayPlanner` class is responsible for decomposing complex tasks into manageable subtasks, replanning tasks based on new insights or failures, and managing the execution order of tasks.
+
+The planner uses a combination of tool descriptions, environmental state, and language learning models to dynamically create and adjust plans for task execution. It maintains a tool graph to manage task dependencies and execution order, ensuring that tasks are executed in a sequence that respects their interdependencies.
+
+## Class Definition
+
+```python
+class FridayPlanner(BaseModule)
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:11`
+
+### Constructor
+
+```python
+def __init__(self, prompt)
+```
+
+<ParamField path="prompt" type="dict" required>
+  Dictionary containing system and user prompts for task decomposition and replanning operations
+</ParamField>
+
+### Attributes
+
+<ResponseField name="tool_num" type="int">
+  Counter for the total number of tools in the current plan
+</ResponseField>
+
+<ResponseField name="tool_node" type="dict">
+  Dictionary mapping tool names to ActionNode objects
+</ResponseField>
+
+<ResponseField name="prompt" type="dict">
+  Prompt templates for LLM interactions
+</ResponseField>
+
+<ResponseField name="tool_graph" type="defaultdict(list)">
+  Dependency graph representing task dependencies
+</ResponseField>
+
+<ResponseField name="sub_task_list" type="list">
+  Topologically sorted list of subtasks ready for execution
+</ResponseField>
+
+## Methods
+
+### decompose_task()
+
+Decomposes a complex task into manageable subtasks and updates the tool graph.
+
+```python
+@api_exception_mechanism(max_retries=3)
+def decompose_task(self, task, tool_description_pair)
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:35`
+
+This method takes a high-level task and a tool-description pair, and utilizes the environment's current state to format and send a decomposition request to the language learning model. It then parses the response to construct and update the tool graph with the decomposed subtasks, followed by a topological sort to determine the execution order.
+
+<ParamField path="task" type="str" required>
+  The complex task to be decomposed into subtasks
+</ParamField>
+
+<ParamField path="tool_description_pair" type="dict" required>
+  A dictionary mapping tool names to their descriptions
+</ParamField>
+
+**Side Effects:**
+- Updates the tool graph with the decomposed subtasks
+- Reorders tools based on dependencies through topological sorting
+- Modifies `tool_node`, `tool_graph`, and `sub_task_list` attributes
+
+**Example:**
+
+```python
+planner = FridayPlanner(prompt_config)
+tool_descriptions = {
+    "FileReader": "Reads file contents from disk",
+    "DataProcessor": "Processes and transforms data"
+}
+planner.decompose_task(
+    task="Analyze the sales data from Q1 report",
+    tool_description_pair=tool_descriptions
+)
+```
+
+---
+
+### replan_task()
+
+Replans the current task by integrating new tools into the original tool graph.
+
+```python
+def replan_task(self, reasoning, current_task, relevant_tool_description_pair)
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:76`
+
+Given the reasoning for replanning and the current task, this method generates a new tool plan incorporating any relevant tools. It formats a replanning request, sends it to the language learning model, and integrates the response (new tools) into the existing tool graph. The graph is then updated to reflect the new dependencies and re-sorted topologically.
+
+<ParamField path="reasoning" type="str" required>
+  The reasoning or justification for replanning the task
+</ParamField>
+
+<ParamField path="current_task" type="str" required>
+  The identifier of the current task being replanned
+</ParamField>
+
+<ParamField path="relevant_tool_description_pair" type="dict" required>
+  A dictionary mapping relevant tool names to their descriptions for replanning
+</ParamField>
+
+**Side Effects:**
+- Modifies the tool graph to include new tools
+- Updates the execution order of tools within the graph
+- Re-runs topological sort on the updated graph
+
+**Example:**
+
+```python
+planner.replan_task(
+    reasoning="Initial data source was unavailable, need alternative approach",
+    current_task="task_001",
+    relevant_tool_description_pair={
+        "APIFetcher": "Fetches data from remote API"
+    }
+)
+```
+
+---
+
+### topological_sort()
+
+Generates a topological sort of the tool graph to determine the execution order.
+
+```python
+def topological_sort(self)
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:230`
+
+This method applies a topological sorting algorithm to the current tool graph, considering the status of each tool. It aims to identify an order in which tools can be executed based on their dependencies, ensuring that all prerequisites are met before a tool is executed. The sorting algorithm accounts for tools that have not yet been executed to avoid cycles and ensure a valid execution order.
+
+**Returns:**
+- `None` if topological sort succeeds
+- `str`: "Cycle detected in the graph, topological sort not possible." if a cycle is found
+
+**Side Effects:**
+- Populates `sub_task_list` with the sorted order of tools to be executed
+- Only includes tools that haven't been executed yet
+
+**Example:**
+
+```python
+planner.topological_sort()
+if planner.sub_task_list:
+    print(f"Execution order: {planner.sub_task_list}")
+```
+
+---
+
+### update_tool()
+
+Updates the specified tool's node information within the tool graph.
+
+```python
+def update_tool(self, tool, return_val='', relevant_code=None, status=False, node_type='Code')
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:118`
+
+This method allows updating a tool's return value, relevant code, execution status, and node type. It is particularly useful for modifying tool details after their execution or during the replanning phase.
+
+<ParamField path="tool" type="str" required>
+  The tool identifier whose details are to be updated
+</ParamField>
+
+<ParamField path="return_val" type="str" default="">
+  The return value of the tool
+</ParamField>
+
+<ParamField path="relevant_code" type="str" default="None">
+  Any relevant code associated with the tool
+</ParamField>
+
+<ParamField path="status" type="bool" default="False">
+  The execution status of the tool
+</ParamField>
+
+<ParamField path="node_type" type="str" default="Code">
+  The type of the tool node (e.g., 'Code', 'API')
+</ParamField>
+
+**Side Effects:**
+- Updates the information of the specified tool node within the tool graph
+- Extracts and logs return values for Code type nodes
+
+---
+
+### reset_plan()
+
+Resets the tool graph and subtask list to their initial states.
+
+```python
+def reset_plan(self)
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:25`
+
+**Side Effects:**
+- Resets `tool_num` to 0
+- Clears `tool_node` dictionary
+- Clears `tool_graph` defaultdict
+- Clears `sub_task_list`
+
+---
+
+### get_pre_tasks_info()
+
+Retrieves information about the prerequisite tasks for a given current task.
+
+```python
+def get_pre_tasks_info(self, current_task)
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:283`
+
+This method collects and formats details about all tasks that are prerequisites for the specified current task. It extracts descriptions and return values for each prerequisite task and compiles this information into a JSON string.
+
+<ParamField path="current_task" type="str" required>
+  The name of the task for which prerequisite information is requested
+</ParamField>
+
+**Returns:**
+- `str`: A JSON string representing a dictionary where each key is a prerequisite task's name, and the value is a dictionary with the task's description and return value
+
+**Example:**
+
+```python
+pre_tasks = planner.get_pre_tasks_info("task_003")
+print(pre_tasks)
+# Output: '{"task_001": {"description": "Read file", "return_val": "file_content"}, ...}'
+```
+
+---
+
+### create_tool_graph()
+
+Constructs a tool graph based on dependencies specified in the given JSON.
+
+```python
+def create_tool_graph(self, decompose_json)
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:172`
+
+This method takes a JSON object containing task information and dependencies, and constructs a tool graph. Each task is added as a node in the graph, with directed edges representing task dependencies.
+
+<ParamField path="decompose_json" type="dict" required>
+  A JSON object where each key is a tool name, and the value is a dictionary containing the tool's name, description, type, and dependencies
+</ParamField>
+
+**Side Effects:**
+- Modifies the internal state by updating `tool_num`, `tool_node`, and `tool_graph`
+- Creates ActionNode instances for each task
+- Establishes dependency relationships between nodes
+
+---
+
+### add_new_tool()
+
+Incorporates a new tool into the existing tool graph based on its dependencies.
+
+```python
+def add_new_tool(self, new_task_json, current_task)
+```
+
+**Location:** `oscopilot/modules/planner/friday_planner.py:201`
+
+This method processes a JSON object representing a new task, including its name, description, type, and dependencies, and adds it to the tool graph. It also updates the tool nodes to reflect this new addition.
+
+<ParamField path="new_task_json" type="dict" required>
+  A JSON object containing the new task's details
+</ParamField>
+
+<ParamField path="current_task" type="str" required>
+  The name of the current task to which the new task's dependencies will be added
+</ParamField>
+
+**Side Effects:**
+- Updates the tool graph and nodes to include the new tool and its dependencies
+- Modifies the dependencies of the current task to include the new tool
+- Appends the last new task to the current task's dependency list
+
+## Usage Example
+
+```python
+from oscopilot.modules.planner import FridayPlanner
+
+# Initialize the planner
+prompt_config = {
+    '_SYSTEM_TASK_DECOMPOSE_PROMPT': '...',
+    '_USER_TASK_DECOMPOSE_PROMPT': '...',
+    '_SYSTEM_TASK_REPLAN_PROMPT': '...',
+    '_USER_TASK_REPLAN_PROMPT': '...'
+}
+planner = FridayPlanner(prompt=prompt_config)
+
+# Decompose a complex task
+task = "Create a data analysis report from CSV files"
+tools = {
+    "ReadCSV": "Reads CSV files from disk",
+    "AnalyzeData": "Performs statistical analysis",
+    "GenerateReport": "Creates formatted reports"
+}
+planner.decompose_task(task, tools)
+
+# Get execution order
+for subtask in planner.sub_task_list:
+    print(f"Execute: {subtask}")
+    # Execute the subtask
+    planner.update_tool(subtask, return_val="result", status=True)
+
+# Replan if needed
+if error_occurred:
+    planner.replan_task(
+        reasoning="File format was different than expected",
+        current_task="ReadCSV",
+        relevant_tool_description_pair={"ReadExcel": "Reads Excel files"}
+    )
+```

@@ -1,0 +1,441 @@
+---
+title: "FRIDAY Vision Agent"
+description: "Vision-enabled FRIDAY agent for desktop automation with OCR and screenshot analysis"
+---
+
+FRIDAY Vision extends the Light FRIDAY agent with visual perception capabilities, enabling it to interact with desktop applications through screenshot analysis and OCR.
+
+## Overview
+
+FRIDAY Vision adds multimodal capabilities to perform desktop automation:
+- **Visual understanding** through screenshot analysis
+- **OCR integration** for text extraction and coordinate mapping
+- **GUI automation** using PyAutoGUI for mouse/keyboard control
+- **Iterative visual feedback** to verify actions
+
+## Prerequisites
+
+### Required Dependencies
+
+```bash
+pip install pillow pyautogui python-dotenv requests
+```
+
+### OCR API Setup
+
+FRIDAY Vision requires an OCR API for text recognition. The default implementation uses Baidu OCR:
+
+1. Sign up at [Baidu Cloud OCR](https://cloud.baidu.com/doc/OCR/s/Ek3h7xypm)
+2. Get your API access token
+3. Configure in `friday_vision.py`:
+
+```python
+OCR_ACCESS_KEY = 'your_access_token_here'
+```
+
+<Note>
+You can substitute any OCR provider by modifying the `ocr()` function in `examples/friday_vision/friday_vision.py:56-84`.
+</Note>
+
+## Basic Usage
+
+Navigate to the examples directory and run:
+
+```bash
+cd examples/friday_vision
+python friday_vision.py --query "Open Chrome and search for Python tutorials"
+```
+
+### Environment Variables
+
+Configure your `.env` file:
+
+```bash
+MODEL_NAME=gpt-4-vision-preview
+OPENAI_API_KEY=your_api_key_here
+OPENAI_ORGANIZATION=your_org
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+## Vision-Enhanced Execution Loop
+
+FRIDAY Vision follows an observation-action cycle:
+
+1. **Capture Screenshot**: Takes full screen capture
+2. **OCR Analysis**: Extracts text and coordinates
+3. **Visual Analysis**: LLM analyzes screenshot and OCR data
+4. **Action Planning**: Determines next mouse/keyboard action
+5. **Execute**: Runs PyAutoGUI commands
+6. **Verify**: Captures new screenshot to confirm action
+
+## OCR Implementation
+
+The OCR function extracts text with coordinates for GUI element location:
+
+```python
+def ocr(image_path):
+    '''
+    Generates a dictionary of words and their respective coordinates 
+    in the image and an encoded image for API requests.
+
+    Args:
+        image_path (str): path to the image file
+        
+    Returns:
+        dict: dictionary of words and their respective coordinates
+        str: encoded image for API requests
+    '''
+    request_url = "https://aip.baidubce.com/rest/2.0/ocr/v1/general" 
+    f = open(image_path, 'rb')
+    img = base64.b64encode(f.read())
+    params = {"image": img, 'paragraph': 'false', 'probability': 'false'}
+    access_token = OCR_ACCESS_KEY 
+    request_url = request_url + "?access_token=" + access_token
+    headers = {'content-type': 'application/x-www-form-urlencoded'}
+    response = requests.post(request_url, data=params, headers=headers)
+    
+    if response:
+        if response.json()['words_result']:
+            dict = {}
+            for item in response.json()['words_result']:
+                # Calculate center point of text bounding box
+                dict[item['words']] = (
+                    item['location']['left'] + item['location']['width'] // 2, 
+                    item['location']['top'] + item['location']['height'] // 2
+                )
+            return (dict, img.decode('utf-8'))
+```
+
+See complete implementation at `examples/friday_vision/friday_vision.py:56-84`.
+
+## Screenshot Management
+
+FRIDAY Vision automatically manages screenshots in an `observations` directory:
+
+```python
+# Create observations directory
+os.makedirs(os.path.join(self.environment.working_dir, 'observations'), exist_ok=True)
+ob_dir = os.path.join(self.environment.working_dir, 'observations')
+
+# Capture and save screenshot
+screenshot = ImageGrab.grab()
+ob_name = "observation_{t}.png".format(t=datetime.now().strftime("%Y%m%d+%H%M%S"))
+img_path = os.path.join(ob_dir, ob_name)
+re_shot = screenshot.resize(pyautogui.size())
+re_shot.save(img_path, format='PNG')
+```
+
+See `examples/friday_vision/friday_vision.py:165-172`.
+
+## Multimodal Message Format
+
+FRIDAY Vision sends screenshots and OCR data to the LLM:
+
+```python
+message.append({
+    "role": "user",
+    "content": [
+        {
+            "type": "text",
+            "text": "Given the screenshot, consider if the last action has been successfully executed and what's the next step?"
+        },
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{encoded_image}",
+                "detail": "high"
+            }
+        },
+        {
+            "type": "text", 
+            "text": f"Coordinates dictionary:\n{label_dict}"
+        }
+    ]
+})
+```
+
+See `examples/friday_vision/friday_vision.py:174-193`.
+
+## GUI Automation Rules
+
+FRIDAY Vision follows strict rules for desktop interaction:
+
+### Opening Files
+
+<CodeGroup>
+
+```python Right-Click Method (Not from Search)
+# When opening files from file explorer
+import pyautogui
+
+# Move to file coordinates from OCR
+file_coords = label_dict['document.pdf']
+pyautogui.moveTo(file_coords[0], file_coords[1])
+
+# Right-click and select "Open"
+pyautogui.rightClick()
+pyautogui.moveTo(open_coords[0], open_coords[1])
+pyautogui.click()
+```
+
+```python Click Method (From Search)
+# When opening files from search results
+import pyautogui
+
+# Click directly or press Enter
+file_coords = label_dict['document.pdf']
+pyautogui.click(file_coords[0], file_coords[1])
+# OR
+pyautogui.press('enter')
+```
+
+</CodeGroup>
+
+### Keyboard Shortcuts
+
+<Warning>
+**DO NOT USE** `pyautogui.hotkey()`. Always use `keyDown()` and `keyUp()` for key combinations:
+</Warning>
+
+```python
+# Correct way to use keyboard shortcuts
+import pyautogui
+
+# Copy (Cmd+C on Mac, Ctrl+C on Windows)
+pyautogui.keyDown('command')  # or 'ctrl' on Windows
+pyautogui.press('c')
+pyautogui.keyUp('command')
+
+# Paste
+pyautogui.keyDown('command')
+pyautogui.press('v')
+pyautogui.keyUp('command')
+```
+
+### Window Management
+
+```python
+# Always maximize windows before operating
+import pyautogui
+
+# Find and click maximize button from OCR coordinates
+maximize_coords = label_dict['Maximize']
+pyautogui.click(maximize_coords[0], maximize_coords[1])
+```
+
+### File Searching on macOS
+
+```python
+# Use Spotlight for searching (recommended)
+import pyautogui
+
+# Open Spotlight
+pyautogui.keyDown('command')
+pyautogui.press('space')
+pyautogui.keyUp('command')
+
+# Type search query
+pyautogui.write('document.pdf')
+pyautogui.press('enter')
+```
+
+## Example Desktop Tasks
+
+<AccordionGroup>
+
+<Accordion title="Open Application and Navigate">
+
+```python
+args.query = "Open Safari and navigate to github.com"
+light_friday = LightFriday(args)
+light_friday.run(args.query)
+```
+
+**Execution flow:**
+1. Captures screenshot
+2. Identifies Safari icon via OCR
+3. Clicks Safari icon
+4. Verifies Safari opened
+5. Clicks address bar
+6. Types "github.com"
+7. Presses Enter
+8. Confirms page loaded
+
+</Accordion>
+
+<Accordion title="File Management">
+
+```python
+args.query = "Find all PDF files in Documents folder and move them to a new folder called PDFs"
+light_friday = LightFriday(args)
+light_friday.run(args.query)
+```
+
+**Execution flow:**
+1. Opens Finder
+2. Navigates to Documents
+3. Identifies PDF files from OCR
+4. Creates new "PDFs" folder
+5. Selects and drags PDF files
+6. Verifies files moved
+
+</Accordion>
+
+<Accordion title="Form Filling">
+
+```python
+args.query = "Fill out the registration form with my information"
+light_friday = LightFriday(args)
+light_friday.run(args.query)
+```
+
+**Execution flow:**
+1. Identifies form fields via OCR
+2. Clicks first field
+3. Types information
+4. Tabs to next field
+5. Repeats for all fields
+6. Clicks submit button
+7. Verifies submission
+
+</Accordion>
+
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+
+<Card title="Never Assume Success" icon="circle-exclamation">
+Always verify actions with screenshots. FRIDAY Vision captures a new observation after each action to confirm success.
+</Card>
+
+<Card title="Use Central Coordinates" icon="crosshairs">
+When clicking GUI elements, always use the center coordinates provided by OCR, not edge coordinates.
+</Card>
+
+<Card title="Check Before Operating" icon="eye">
+For file operations, verify the file is visible in the screenshot before proceeding with actions.
+</Card>
+
+<Card title="Save Before Closing" icon="floppy-disk">
+Always save files before terminating if any write operations were performed.
+</Card>
+
+</CardGroup>
+
+## Important Restrictions
+
+### Screenshot Handling
+
+<Warning>
+**DO NOT** use `pyautogui.screenshot()` to capture screenshots. All screenshots are automatically provided to the agent.
+</Warning>
+
+### Element Location
+
+<Warning>
+**DO NOT** use `pyautogui.locateCenterOnScreen()` to find elements. Use OCR coordinates from the provided dictionary.
+</Warning>
+
+### Overlapping Icons
+
+```python
+# If new file icon overlaps with others, drag it away
+import pyautogui
+
+new_file_coords = label_dict['new_file.txt']
+free_space = (new_file_coords[0] + 100, new_file_coords[1])
+
+pyautogui.moveTo(new_file_coords[0], new_file_coords[1])
+pyautogui.drag(100, 0)  # Drag 100 pixels to the right
+```
+
+## System Prompt Enhancements
+
+FRIDAY Vision includes specialized instructions for desktop automation:
+
+- Acts as a desktop computer agent with mouse/keyboard control
+- Primarily uses PyAutoGUI for all GUI interactions
+- Analyzes screenshots at each step to guide actions
+- Never assumes actions succeeded without visual confirmation
+- Terminates immediately after task completion
+
+See full system prompt at `examples/friday_vision/friday_vision.py:103-154`.
+
+## Observations Directory
+
+All screenshots are saved with timestamps:
+
+```
+observations/
+├── observation_20240305+143022.png
+├── observation_20240305+143025.png
+├── observation_20240305+143028.png
+└── ...
+```
+
+This allows you to review the agent's visual understanding at each step.
+
+## Alternative OCR Providers
+
+To use a different OCR service, modify the `ocr()` function:
+
+<CodeGroup>
+
+```python Google Cloud Vision
+import os
+from google.cloud import vision
+
+def ocr(image_path):
+    client = vision.ImageAnnotatorClient()
+    
+    with open(image_path, 'rb') as image_file:
+        content = image_file.read()
+    
+    image = vision.Image(content=content)
+    response = client.text_detection(image=image)
+    
+    dict = {}
+    for text in response.text_annotations[1:]:  # Skip first full text
+        vertices = text.bounding_poly.vertices
+        center_x = sum([v.x for v in vertices]) // len(vertices)
+        center_y = sum([v.y for v in vertices]) // len(vertices)
+        dict[text.description] = (center_x, center_y)
+    
+    import base64
+    with open(image_path, 'rb') as f:
+        encoded = base64.b64encode(f.read()).decode('utf-8')
+    
+    return (dict, encoded)
+```
+
+```python Tesseract OCR
+import pytesseract
+from PIL import Image
+import base64
+
+def ocr(image_path):
+    image = Image.open(image_path)
+    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    
+    dict = {}
+    for i in range(len(data['text'])):
+        if data['text'][i].strip():
+            center_x = data['left'][i] + data['width'][i] // 2
+            center_y = data['top'][i] + data['height'][i] // 2
+            dict[data['text'][i]] = (center_x, center_y)
+    
+    with open(image_path, 'rb') as f:
+        encoded = base64.b64encode(f.read()).decode('utf-8')
+    
+    return (dict, encoded)
+```
+
+</CodeGroup>
+
+## Related
+
+- [Light FRIDAY](/examples/friday) - Basic FRIDAY agent without vision
+- [SheetCopilot](/examples/sheet-copilot) - Specialized Excel automation
+- [Quick Start](/quickstart) - Getting started with OS-Copilot

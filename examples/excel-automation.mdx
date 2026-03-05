@@ -1,0 +1,577 @@
+---
+title: "Excel Automation"
+description: "Automated Excel control with FRIDAY agent and self-learning capabilities"
+---
+
+This guide demonstrates how to use OS-Copilot's FRIDAY agent to automate Excel tasks, from basic operations to advanced self-learning automation.
+
+## Overview
+
+FRIDAY can automate Excel tasks by:
+- Executing natural language instructions
+- Learning from demonstrations
+- Self-improving through experience
+- Handling complex multi-step operations
+
+## Prerequisites
+
+### Installation
+
+Follow the [Installation Guide](/installation) to set up OS-Copilot:
+
+```bash
+git clone https://github.com/OS-Copilot/OS-Copilot.git
+cd OS-Copilot
+
+conda create -n oscopilot_env python=3.10 -y
+conda activate oscopilot_env
+pip install -e .
+```
+
+### Configure API Keys
+
+Set up your `.env` file:
+
+```bash
+cp .env_template .env
+```
+
+Edit `.env` with your credentials:
+
+```bash
+MODEL_NAME=gpt-4
+OPENAI_API_KEY=your_api_key_here
+OPENAI_ORGANIZATION=your_org_here
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+## Basic Excel Automation
+
+FRIDAY can perform Excel operations through natural language:
+
+### Simple Commands
+
+```python
+from oscopilot import FridayAgent
+from oscopilot import FridayExecutor, FridayPlanner, FridayRetriever, ToolManager
+from oscopilot.utils import setup_config
+
+args = setup_config()
+agent = FridayAgent(FridayPlanner, FridayRetriever, FridayExecutor, ToolManager, config=args)
+
+# Example tasks
+tasks = [
+    "Open sales_data.xlsx and calculate the sum of column B",
+    "Create a pivot table from the sales data",
+    "Generate a bar chart showing monthly revenue",
+    "Format column C as currency with 2 decimal places"
+]
+
+for task in tasks:
+    agent.run(task)
+```
+
+### Working with Formulas
+
+```python
+# Task with explicit formula
+task = """
+Open financial_report.xlsx.
+In column D, calculate Gross Profit using the formula: Revenue - Cost of Goods Sold.
+Highlight cells in column D that are above average with green background.
+"""
+
+agent.run(task)
+```
+
+### Multi-Sheet Operations
+
+```python
+task = """
+I have a workbook with two sheets:
+- 'Transactions': Contains sales transactions
+- 'Products': Contains product pricing
+
+Task:
+1. Calculate revenue for each transaction using VLOOKUP to get prices
+2. Create a summary in a new sheet showing total revenue by product
+3. Add a pie chart of the revenue distribution
+"""
+
+agent.run(task)
+```
+
+## SheetCopilot Integration
+
+For specialized Excel tasks, use the SheetCopilot agent:
+
+```python
+from oscopilot.utils import SheetTaskLoader
+
+# Load predefined sheet tasks
+sheet_task_loader = SheetTaskLoader("examples/SheetCopilot/sheet_task.jsonl")
+agent = FridayAgent(FridayPlanner, FridayRetriever, FridayExecutor, ToolManager, config=args)
+
+# Run specific task
+task = sheet_task_loader.get_data_by_task_id(3)
+agent.run(task)
+```
+
+See [SheetCopilot](/examples/sheet-copilot) for detailed examples.
+
+## Advanced: Self-Learning for Excel
+
+FRIDAY can learn from demonstrations to improve Excel automation performance.
+
+### How Self-Learning Works
+
+1. **Demonstrate**: Show FRIDAY how to complete a task
+2. **Learn**: FRIDAY extracts patterns and creates tools
+3. **Apply**: FRIDAY uses learned tools for similar tasks
+4. **Improve**: FRIDAY refines tools based on feedback
+
+### Example: Teaching FRIDAY Custom Operations
+
+<Steps>
+
+<Step title="Demonstrate the Task">
+
+Manually perform the Excel operation while FRIDAY observes:
+
+```python
+task = """
+Observe as I perform this task:
+1. Open workbook
+2. Select data range A1:D100
+3. Create pivot table with Product as rows and Sum of Sales as values
+4. Apply blue table style
+"""
+
+# FRIDAY records the demonstration
+agent.learn_from_demonstration(task, observe_mode=True)
+```
+
+</Step>
+
+<Step title="Let FRIDAY Practice">
+
+FRIDAY attempts the task on new data:
+
+```python
+practice_task = """
+Apply the same pivot table creation process to sales_q2.xlsx
+"""
+
+result = agent.run(practice_task, learning_mode=True)
+print(f"Success: {result.success}")
+print(f"Confidence: {result.confidence}")
+```
+
+</Step>
+
+<Step title="Provide Feedback">
+
+Correct errors and refine the approach:
+
+```python
+if not result.success:
+    feedback = """
+    The pivot table was created but the style wasn't applied.
+    Remember to: Format as Table -> Blue Medium Style 2
+    """
+    agent.learn_from_feedback(practice_task, feedback)
+```
+
+</Step>
+
+<Step title="Apply to New Tasks">
+
+FRIDAY now handles similar tasks automatically:
+
+```python
+new_task = "Create a pivot table from quarterly_data.xlsx with the blue style"
+agent.run(new_task)  # Uses learned tool
+```
+
+</Step>
+
+</Steps>
+
+### Self-Learning Architecture
+
+```python
+class SelfLearningFriday:
+    def __init__(self, base_agent):
+        self.agent = base_agent
+        self.tool_library = ToolLibrary()
+        self.experience_buffer = []
+    
+    def learn_from_demonstration(self, task, actions):
+        """Extract patterns from demonstration"""
+        # 1. Record action sequence
+        self.experience_buffer.append((task, actions))
+        
+        # 2. Identify common patterns
+        pattern = self._extract_pattern(actions)
+        
+        # 3. Create new tool
+        new_tool = self._create_tool_from_pattern(pattern)
+        
+        # 4. Add to library
+        self.tool_library.add(new_tool)
+    
+    def run_with_learning(self, task):
+        """Execute task and learn from experience"""
+        # Try to use learned tools
+        result = self.agent.run(task)
+        
+        # Store experience
+        self.experience_buffer.append((task, result))
+        
+        # Update tools based on success/failure
+        if result.success:
+            self._reinforce_tool(task)
+        else:
+            self._adjust_tool(task, result.error)
+        
+        return result
+```
+
+## Advanced Excel Operations
+
+### Complex Data Analysis
+
+```python
+task = """
+Analyze sales_2024.xlsx:
+
+1. Data Cleaning:
+   - Remove duplicate entries
+   - Fill missing values in Revenue column with median
+   - Convert Date column to proper date format
+
+2. Analysis:
+   - Calculate monthly sales trends
+   - Identify top 10 products by revenue
+   - Compute year-over-year growth rates
+
+3. Visualization:
+   - Line chart for monthly trends
+   - Bar chart for top products
+   - Add trendlines to charts
+
+4. Export:
+   - Save analysis to new sheet 'Summary'
+   - Export charts as PNG files
+"""
+
+agent.run(task)
+```
+
+### Automated Reporting
+
+```python
+task = """
+Generate weekly sales report:
+
+1. Load data from sales_database.xlsx
+2. Filter for current week's transactions
+3. Create summary with:
+   - Total revenue
+   - Average transaction value
+   - Top performing categories
+   - Sales by day of week
+4. Format as professional report with:
+   - Company header in merged A1:E1
+   - Bold headers
+   - Currency formatting
+   - Conditional formatting for KPIs
+5. Save as Weekly_Report_[DATE].xlsx
+"""
+
+agent.run(task)
+```
+
+### Batch Processing
+
+```python
+import os
+from pathlib import Path
+
+# Process multiple Excel files
+data_dir = Path("data/monthly_reports/")
+
+for excel_file in data_dir.glob("*.xlsx"):
+    task = f"""
+    Process {excel_file.name}:
+    1. Validate data completeness
+    2. Apply standard formulas
+    3. Generate pivot table summary
+    4. Save processed version to processed/
+    """
+    
+    print(f"Processing {excel_file.name}...")
+    result = agent.run(task)
+    print(f"Status: {'Success' if result.success else 'Failed'}")
+```
+
+## Integration with Python Data Tools
+
+FRIDAY can combine Excel with pandas, numpy, and other Python libraries:
+
+```python
+task = """
+Advanced analysis using Python:
+
+1. Load sales_data.xlsx using pandas
+2. Perform statistical analysis:
+   - Calculate correlation matrix
+   - Run linear regression on sales vs. marketing spend
+   - Detect outliers using IQR method
+3. Create visualizations with matplotlib
+4. Write results back to Excel with:
+   - Correlation matrix in 'Analysis' sheet
+   - Regression plot as embedded image
+   - Outliers highlighted in original data
+"""
+
+agent.run(task)
+```
+
+## Error Handling and Recovery
+
+```python
+from oscopilot.exceptions import ExecutionError, ToolNotFoundError
+
+task = "Complex Excel operation"
+
+try:
+    result = agent.run(task)
+except ExecutionError as e:
+    print(f"Execution failed: {e}")
+    # Provide feedback for learning
+    agent.learn_from_error(task, str(e))
+    
+    # Retry with different approach
+    simplified_task = agent.simplify_task(task)
+    result = agent.run(simplified_task)
+except ToolNotFoundError as e:
+    print(f"Missing tool: {e}")
+    # Suggest tool creation
+    agent.suggest_tool_creation(task)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+
+<Card title="Clear Instructions" icon="message">
+Provide explicit instructions including:
+- Target workbook and sheets
+- Required formulas with explanations
+- Expected output format
+- Specific formatting requirements
+</Card>
+
+<Card title="Incremental Learning" icon="graduation-cap">
+Teach FRIDAY incrementally:
+- Start with simple operations
+- Gradually increase complexity
+- Provide feedback on errors
+- Reinforce successful patterns
+</Card>
+
+<Card title="Error Recovery" icon="shield">
+Handle failures gracefully:
+- Catch execution errors
+- Provide corrective feedback
+- Simplify complex tasks
+- Retry with adjustments
+</Card>
+
+<Card title="Tool Organization" icon="toolbox">
+Manage learned tools:
+- Review tool library regularly
+- Remove redundant tools
+- Merge similar tools
+- Document tool usage
+</Card>
+
+</CardGroup>
+
+## Performance Optimization
+
+### Batch Similar Operations
+
+```python
+# Instead of multiple separate tasks
+tasks = [
+    "Calculate sum of column A",
+    "Calculate sum of column B",
+    "Calculate sum of column C"
+]
+
+# Combine into single task
+combined_task = """
+Calculate sums for columns A, B, and C.
+Place results in cells A101, B101, C101.
+"""
+agent.run(combined_task)  # More efficient
+```
+
+### Use Learned Tools
+
+```python
+# First time: FRIDAY learns the pattern
+task1 = "Create monthly sales pivot table with blue style"
+agent.run(task1, learning_mode=True)
+
+# Subsequent times: Uses learned tool (much faster)
+task2 = "Create monthly sales pivot table with blue style"
+agent.run(task2)  # Reuses learned approach
+```
+
+## Monitoring and Debugging
+
+```python
+from oscopilot.utils import enable_debug_logging
+
+# Enable detailed logging
+enable_debug_logging()
+
+# Run task with monitoring
+result = agent.run(task, verbose=True)
+
+# Review execution steps
+for step in result.execution_steps:
+    print(f"Step {step.index}: {step.action}")
+    print(f"  Status: {step.status}")
+    print(f"  Duration: {step.duration}s")
+    if step.error:
+        print(f"  Error: {step.error}")
+```
+
+## Example: Complete Workflow
+
+Here's a complete example automating a financial report:
+
+<CodeGroup>
+
+```python Complete Automation
+from oscopilot import FridayAgent
+from oscopilot import FridayExecutor, FridayPlanner, FridayRetriever, ToolManager
+from oscopilot.utils import setup_config
+
+args = setup_config()
+agent = FridayAgent(
+    FridayPlanner, 
+    FridayRetriever, 
+    FridayExecutor, 
+    ToolManager, 
+    config=args
+)
+
+# Multi-step financial analysis
+task = """
+Financial Report Automation:
+
+Data Source: quarterly_financials.xlsx
+
+Step 1 - Data Preparation:
+- Load data from 'Transactions' sheet
+- Remove entries with missing amounts
+- Calculate derived columns:
+  * Gross Profit = Revenue - COGS
+  * Operating Profit = Gross Profit - Operating Expenses
+  * Net Profit = Operating Profit - Taxes
+
+Step 2 - Analysis:
+- Create pivot table in new 'Summary' sheet:
+  * Rows: Month
+  * Values: Sum of Revenue, Gross Profit, Net Profit
+- Calculate profit margins:
+  * Gross Margin % = (Gross Profit / Revenue) * 100
+  * Net Margin % = (Net Profit / Revenue) * 100
+
+Step 3 - Visualization:
+- Create clustered column chart:
+  * X-axis: Months
+  * Y-axis: Revenue, Gross Profit, Net Profit
+  * Title: "Quarterly Financial Performance"
+  * Legend: Bottom
+- Create line chart for margin trends
+
+Step 4 - Formatting:
+- Apply accounting format to all currency columns
+- Apply percentage format to margin columns
+- Bold headers
+- Apply blue table style to pivot table
+- Add company logo to A1
+
+Step 5 - Export:
+- Save workbook as Q1_2024_Financial_Report.xlsx
+- Export summary sheet as PDF
+"""
+
+print("Starting financial report automation...")
+result = agent.run(task)
+
+if result.success:
+    print("Report generated successfully!")
+    print(f"Location: {result.output_file}")
+else:
+    print(f"Report generation failed: {result.error}")
+```
+
+```python With Self-Learning
+# Enhanced version with self-learning
+
+# First time: Learn the process
+print("Teaching FRIDAY the financial report process...")
+result1 = agent.run(task, learning_mode=True)
+
+if result1.success:
+    print("FRIDAY learned the process!")
+    print(f"Created tool: {result1.learned_tool.name}")
+
+# Subsequent times: Apply learned tool
+print("\nGenerating Q2 report using learned process...")
+task2 = """
+Generate the same financial report for Q2_2024_data.xlsx
+"""
+
+result2 = agent.run(task2)
+print(f"Q2 report: {result2.output_file}")
+print(f"Time saved: {result1.duration - result2.duration:.2f}s")
+```
+
+</CodeGroup>
+
+## Related Documentation
+
+- [SheetCopilot Agent](/examples/sheet-copilot) - Specialized Excel task agent
+- [Self-Learning Tutorial](/guides/self-learning) - Detailed self-learning guide
+- [Adding Tools](/guides/adding-tools) - Extend FRIDAY with custom Excel tools
+- [Building Agents](/guides/building-agents) - Design new automation agents
+
+## Additional Resources
+
+<CardGroup cols={2}>
+
+<Card title="Excel Examples" icon="table" href="/examples/sheet-copilot">
+Explore 20+ pre-built Excel automation examples
+</Card>
+
+<Card title="API Reference" icon="code" href="/api/agents/friday-agent">
+Detailed API documentation for Excel automation
+</Card>
+
+<Card title="Community Discord" icon="discord" href="https://discord.com/invite/rXS2XbgfaD">
+Get help and share Excel automation use cases
+</Card>
+
+<Card title="GitHub Repository" icon="github" href="https://github.com/OS-Copilot/OS-Copilot">
+View source code and contribute improvements
+</Card>
+
+</CardGroup>

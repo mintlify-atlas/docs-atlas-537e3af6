@@ -1,0 +1,607 @@
+---
+title: Modules
+description: Deep dive into Planner, Retriever, Executor, and Learner modules
+---
+
+## Overview
+
+OS-Copilot's functionality is organized into four core modules that work together to execute complex tasks. Each module has a specific responsibility in the task execution pipeline.
+
+<CardGroup cols={2}>
+  <Card title="Planner" icon="sitemap" color="#3b82f6">
+    Task decomposition and dependency management
+  </Card>
+  <Card title="Retriever" icon="database" color="#8b5cf6">
+    Tool discovery and code retrieval
+  </Card>
+  <Card title="Executor" icon="terminal" color="#10b981">
+    Code generation and execution
+  </Card>
+  <Card title="Learner" icon="book" color="#f59e0b">
+    Self-improvement through course design
+  </Card>
+</CardGroup>
+
+## Planner Module
+
+The Planner decomposes complex tasks into executable subtasks with dependency tracking.
+
+### Core Responsibilities
+
+- Breaks down high-level tasks into atomic subtasks
+- Creates a directed acyclic graph (DAG) of dependencies
+- Performs topological sorting to determine execution order
+- Supports dynamic replanning when execution fails
+
+### Key Methods
+
+<Accordion title="decompose_task()">
+Decomposes a complex task into manageable subtasks:
+
+```python
+# From friday_planner.py:35-74
+@api_exception_mechanism(max_retries=3)
+def decompose_task(self, task, tool_description_pair):
+    """
+    Decomposes a complex task into manageable subtasks and updates the tool graph.
+    """
+    files_and_folders = self.environment.list_working_dir()
+    tool_description_pair = json.dumps(tool_description_pair)
+    api_list = get_open_api_description_pair()
+    
+    sys_prompt = self.prompt['_SYSTEM_TASK_DECOMPOSE_PROMPT']
+    user_prompt = self.prompt['_USER_TASK_DECOMPOSE_PROMPT'].format(
+        system_version=self.system_version,
+        task=task,
+        tool_list=tool_description_pair,
+        api_list=api_list,
+        working_dir=self.environment.working_dir,
+        files_and_folders=files_and_folders
+    )
+    
+    response = send_chat_prompts(sys_prompt, user_prompt, self.llm, prefix="Overall")
+    decompose_json = self.extract_json_from_string(response)
+    
+    # Building tool graph and topological ordering of tools
+    if decompose_json != 'No JSON data found in the string.':
+        self.create_tool_graph(decompose_json)
+        self.topological_sort()
+    else:
+        print(response)
+        print('No JSON data found in the string.')
+        sys.exit()
+```
+
+**Input**: Task description and available tool descriptions
+
+**Output**: Topologically sorted list of subtasks
+</Accordion>
+
+<Accordion title="replan_task()">
+Replans a task when the original approach fails:
+
+```python
+# From friday_planner.py:76-116
+def replan_task(self, reasoning, current_task, relevant_tool_description_pair):
+    """
+    Replans the current task by integrating new tools into the original tool graph.
+    """
+    current_tool = self.tool_node[current_task]
+    current_task_description = current_tool.description
+    relevant_tool_description_pair = json.dumps(relevant_tool_description_pair)
+    files_and_folders = self.environment.list_working_dir()
+    
+    sys_prompt = self.prompt['_SYSTEM_TASK_REPLAN_PROMPT']
+    user_prompt = self.prompt['_USER_TASK_REPLAN_PROMPT'].format(
+        current_task=current_task,
+        current_task_description=current_task_description,
+        system_version=self.system_version,
+        reasoning=reasoning,
+        tool_list=relevant_tool_description_pair,
+        working_dir=self.environment.working_dir,
+        files_and_folders=files_and_folders
+    )
+    
+    response = send_chat_prompts(sys_prompt, user_prompt, self.llm)
+    new_tool = self.extract_json_from_string(response)
+    
+    # Add new tool to tool graph
+    self.add_new_tool(new_tool, current_task)
+    # Update topological sort
+    self.topological_sort()
+```
+
+**Use Case**: When execution reveals the need for additional subtasks or a different approach.
+</Accordion>
+
+<Accordion title="topological_sort()">
+Determines the execution order of subtasks:
+
+```python
+# From friday_planner.py:230-281
+def topological_sort(self):
+    """
+    Generates a topological sort of the tool graph to determine the execution order.
+    """
+    self.sub_task_list = []
+    graph = defaultdict(list)
+    
+    for node, dependencies in self.tool_graph.items():
+        # If the current node has not been executed, put it in the dependency graph
+        if not self.tool_node[node].status:
+            graph.setdefault(node, [])
+            for dependent in dependencies:
+                # If the dependencies haven't been executed, put them in the graph
+                if not self.tool_node[dependent].status:
+                    graph[dependent].append(node)
+    
+    in_degree = {node: 0 for node in graph}
+    
+    # Count in-degree for each node
+    for node in graph:
+        for dependent in graph[node]:
+            in_degree[dependent] += 1
+    
+    # Initialize queue with nodes having in-degree 0
+    queue = deque([node for node in in_degree if in_degree[node] == 0])
+    
+    while queue:
+        current = queue.popleft()
+        self.sub_task_list.append(current)
+        
+        # Decrease in-degree for all nodes dependent on current
+        for dependent in graph[current]:
+            in_degree[dependent] -= 1
+            if in_degree[dependent] == 0:
+                queue.append(dependent)
+    
+    # Check if topological sort is possible (i.e., no cycle)
+    if len(self.sub_task_list) == len(graph):
+        print("topological sort is possible")
+    else:
+        return "Cycle detected in the graph, topological sort not possible."
+```
+
+**Algorithm**: Kahn's algorithm for topological sorting with cycle detection.
+</Accordion>
+
+### Task Graph Structure
+
+The Planner maintains a task graph using `ActionNode` objects:
+
+```python
+# Task graph structure
+self.tool_node = {}  # Dictionary of ActionNode objects
+self.tool_graph = defaultdict(list)  # Adjacency list of dependencies
+self.sub_task_list = []  # Topologically sorted execution order
+```
+
+Each `ActionNode` contains:
+- Task name and description
+- Task type (Python, Shell, AppleScript, API, QA)
+- Dependencies (prerequisite tasks)
+- Execution status and return value
+- Links to next actions
+
+## Retriever Module
+
+The Retriever finds relevant tools from the repository using vector similarity search.
+
+### Core Responsibilities
+
+- Performs semantic search in the tool repository
+- Retrieves tool names, descriptions, and code
+- Filters tools based on task relevance
+- Provides code examples for generation
+
+### Key Methods
+
+<Accordion title="retrieve_tool_name()">
+Finds relevant tools using vector similarity:
+
+```python
+# From vector_retriever.py:33-48
+def retrieve_tool_name(self, task, k=10):
+    """
+    Retrieves a list of tool names relevant to the specified task.
+    """
+    retrieve_tool_name = self.tool_manager.retrieve_tool_name(task, k)
+    return retrieve_tool_name
+```
+
+**How it works**:
+1. Embeds the task description using OpenAI embeddings
+2. Performs cosine similarity search in Chroma vector database
+3. Returns top-k most similar tool names
+
+```python
+# From tool_manager.py:226-258
+def retrieve_tool_name(self, query, k=10):
+    k = min(self.vectordb._collection.count(), k)
+    if k == 0:
+        return []
+    
+    print(f"Tool Manager retrieving for {k} Tools")
+    
+    # Retrieve descriptions of the top k related tasks
+    docs_and_scores = self.vectordb.similarity_search_with_score(query, k=k)
+    
+    print(f"Tool Manager retrieved tools: "
+          f"{', '.join([doc.metadata['name'] for doc, _ in docs_and_scores])}")
+    
+    tool_name = []
+    for doc, _ in docs_and_scores:
+        tool_name.append(doc.metadata["name"])
+    
+    return tool_name
+```
+</Accordion>
+
+<Accordion title="retrieve_tool_description_pair()">
+Retrieves descriptions for a list of tools:
+
+```python
+# From vector_retriever.py:133-151
+def retrieve_tool_description_pair(self, retrieve_tool_name):
+    """
+    Retrieves a mapping of tool names to their descriptions.
+    """
+    retrieve_tool_description = self.retrieve_tool_description(retrieve_tool_name)
+    tool_description_pair = {}
+    for name, description in zip(retrieve_tool_name, retrieve_tool_description):
+        tool_description_pair[name] = description
+    return tool_description_pair
+```
+
+**Output**: Dictionary mapping tool names to their descriptions for LLM context.
+</Accordion>
+
+<Accordion title="retrieve_tool_code_pair()">
+Retrieves actual code for selected tools:
+
+```python
+# From vector_retriever.py:113-131
+def retrieve_tool_code_pair(self, retrieve_tool_name):
+    """
+    Retrieves a mapping of tool names to their respective codes.
+    """
+    retrieve_tool_code = self.retrieve_tool_code(retrieve_tool_name)
+    tool_code_pair = {}
+    for name, description in zip(retrieve_tool_name, retrieve_tool_code):
+        tool_code_pair[name] = description
+    return tool_code_pair
+```
+
+**Use Case**: Providing code examples to the Executor for better code generation.
+</Accordion>
+
+## Executor Module
+
+The Executor generates code and executes it in appropriate environments.
+
+### Core Responsibilities
+
+- Generates Python/Shell/AppleScript code using LLMs
+- Executes code in isolated environments
+- Judges execution success
+- Repairs failed code
+- Stores successful tools
+
+### Code Generation
+
+<Accordion title="generate_tool()">
+Generates executable code for a task:
+
+```python
+# From friday_executor.py:33-82
+@api_exception_mechanism(max_retries=3)
+def generate_tool(self, task_name, task_description, tool_type, 
+                 pre_tasks_info, relevant_code):
+    """
+    Generates executable code and invocation logic for a specified tool.
+    """
+    relevant_code = json.dumps(relevant_code)
+    
+    if tool_type == 'Python':
+        sys_prompt = self.prompt['_SYSTEM_PYTHON_SKILL_AND_INVOKE_GENERATE_PROMPT']
+        user_prompt = self.prompt['_USER_PYTHON_SKILL_AND_INVOKE_GENERATE_PROMPT'].format(
+            system_version=self.system_version,
+            task_description=task_description,
+            working_dir=self.environment.working_dir,
+            task_name=task_name,
+            pre_tasks_info=pre_tasks_info,
+            relevant_code=relevant_code
+        )
+    else:
+        sys_prompt = self.prompt['_SYSTEM_SHELL_APPLESCRIPT_GENERATE_PROMPT']
+        user_prompt = self.prompt['_USER_SHELL_APPLESCRIPT_GENERATE_PROMPT'].format(
+            system_version=self.system_version,
+            task_description=task_description,
+            working_dir=self.environment.working_dir,
+            task_name=task_name,
+            pre_tasks_info=pre_tasks_info,
+            Type=tool_type
+        )
+    
+    create_msg = send_chat_prompts(sys_prompt, user_prompt, self.llm)
+    code = self.extract_code(create_msg, tool_type)
+    
+    if tool_type == 'Python':
+        invoke = self.extract_information(create_msg, 
+                                         begin_str='<invoke>', 
+                                         end_str='</invoke>')[0]
+    else:
+        invoke = ''
+    
+    return code, invoke
+```
+
+**Context Provided**:
+- Task description
+- Previous task results (`pre_tasks_info`)
+- Similar tool code (`relevant_code`)
+- Working directory and system version
+</Accordion>
+
+### Code Execution
+
+<Accordion title="execute_tool()">
+Executes code in the appropriate environment:
+
+```python
+# From friday_executor.py:84-129
+def execute_tool(self, code, invoke, node_type):
+    """
+    Executes a given tool code and returns the execution state.
+    """
+    # Print result info
+    if node_type == 'Python':
+        info = "\n" + '''print("<return>")''' + "\n" + "print(result)" + \
+               "\n" + '''print("</return>")'''
+        code = code + '\nresult=' + invoke + info
+    
+    print("************************<code>**************************")
+    print(code)
+    print("************************</code>*************************")
+    
+    state = self.environment.step(node_type, code)
+    
+    print("************************<state>**************************")
+    print(state)
+    print("************************</state>*************************")
+    
+    return state
+```
+
+**Execution State** contains:
+- `result`: Standard output/return value
+- `error`: Error messages and tracebacks
+- `pwd`: Current working directory
+- `ls`: Directory listing
+</Accordion>
+
+### Judging and Repairing
+
+<Accordion title="judge_tool()">
+Evaluates whether a tool succeeded:
+
+```python
+# From friday_executor.py:131-177
+@api_exception_mechanism(max_retries=3)
+def judge_tool(self, code, task_description, state, next_action):
+    """
+    Evaluates the outcome of an executed tool to determine its success.
+    """
+    next_action = json.dumps(next_action)
+    
+    sys_prompt = self.prompt['_SYSTEM_TASK_JUDGE_PROMPT']
+    user_prompt = self.prompt['_USER_TASK_JUDGE_PROMPT'].format(
+        current_code=code,
+        task=task_description,
+        code_output=state.result[:999] if len(state.result) > 1000 else state.result,
+        current_working_dir=state.pwd,
+        working_dir=self.environment.working_dir,
+        files_and_folders=state.ls,
+        next_action=next_action,
+        code_error=state.error,
+    )
+    
+    response = send_chat_prompts(sys_prompt, user_prompt, self.llm)
+    judge_json = self.extract_json_from_string(response)
+    
+    print("************************<judge_json>**************************")
+    print(judge_json)
+    print("************************</judge_json>*************************")
+    
+    try:
+        reasoning = judge_json['reasoning']
+        status = judge_json['status']  # 'Complete', 'Amend', or 'Replan'
+        score = judge_json['score']
+    except KeyError as e:
+        print("The judge module did not output in the specified format.")
+        raise ValueError(f"Missing key in judge module output: {e}")
+    
+    return reasoning, status, score
+```
+
+**Status Values**:
+- `Complete`: Task succeeded
+- `Amend`: Code needs fixing
+- `Replan`: Need different approach
+</Accordion>
+
+<Accordion title="repair_tool()">
+Amends code based on critique:
+
+```python
+# From friday_executor.py:179-231
+@api_exception_mechanism(max_retries=3)
+def repair_tool(self, current_code, task_description, tool_type, 
+               state, critique, pre_tasks_info):
+    """
+    Modifies or corrects the code of a tool based on feedback.
+    """
+    if tool_type == 'Python':
+        sys_prompt = self.prompt['_SYSTEM_PYTHON_SKILL_AMEND_AND_INVOKE_PROMPT']
+        user_prompt = self.prompt['_USER_PYTHON_SKILL_AMEND_AND_INVOKE_PROMPT'].format(
+            original_code=current_code,
+            task=task_description,
+            error=state.error,
+            code_output=state.result,
+            current_working_dir=state.pwd,
+            working_dir=self.environment.working_dir,
+            files_and_folders=state.ls,
+            critique=critique,
+            pre_tasks_info=pre_tasks_info
+        )
+    elif tool_type in ['Shell', 'AppleScript']:
+        sys_prompt = self.prompt['_SYSTEM_SHELL_APPLESCRIPT_AMEND_PROMPT']
+        user_prompt = self.prompt['_USER_SHELL_APPLESCRIPT_AMEND_PROMPT'].format(
+            original_code=current_code,
+            task=task_description,
+            error=state.error,
+            code_output=state.result,
+            current_working_dir=state.pwd,
+            working_dir=self.environment.working_dir,
+            files_and_folders=state.ls,
+            critique=critique,
+            pre_tasks_info=pre_tasks_info
+        )
+    
+    amend_msg = send_chat_prompts(sys_prompt, user_prompt, self.llm)
+    new_code = self.extract_python_code(amend_msg)
+    invoke = self.extract_information(amend_msg, 
+                                     begin_str='<invoke>', 
+                                     end_str='</invoke>')[0]
+    
+    return new_code, invoke
+```
+
+**Repair Process**:
+1. Provide original code and error/critique
+2. LLM generates amended code
+3. Extract and return new code
+</Accordion>
+
+### Tool Storage
+
+<Accordion title="store_tool()">
+Stores successful tools in the repository:
+
+```python
+# From friday_executor.py:273-304
+def store_tool(self, tool, code):
+    """
+    Stores the provided tool and its code in the tool library.
+    """
+    # If tool not in db
+    if not self.tool_manager.exist_tool(tool):
+        # Extract tool description from code
+        tool_description = self.extract_tool_description(code)
+        
+        # Save tool name, code, and description to JSON
+        tool_info = self.save_tool_info_to_json(tool, code, tool_description)
+        
+        # Save code and descriptions to databases and JSON files
+        self.tool_manager.add_new_tool(tool_info)
+    else:
+        print("tool already exists!")
+```
+
+**Storage includes**:
+- Vector embedding in Chroma DB
+- Python code file
+- Description text file
+- JSON metadata entry
+</Accordion>
+
+## Learner Module
+
+The Learner module enables self-improvement through course design.
+
+### Core Responsibilities
+
+- Designs learning courses for specific software packages
+- Creates progressive learning paths
+- Generates demo files and exercises
+
+### Course Design
+
+<Accordion title="design_course()">
+Creates a structured learning course:
+
+```python
+# From self_learner.py:28-58
+def design_course(self, software_name, package_name, demo_file_path, 
+                 file_content=None, prior_course=None):
+    """
+    Designs a course based on specified software and content parameters.
+    """
+    sys_prompt = self.prompt['_SYSTEM_COURSE_DESIGN_PROMPT']
+    user_prompt = self.prompt['_USER_COURSE_DESIGN_PROMPT'].format(
+        system_version=self.system_version,
+        software_name=software_name,
+        package_name=package_name,
+        file_content=file_content,
+        demo_file_path=demo_file_path,
+        prior_course=prior_course
+    )
+    
+    response = send_chat_prompts(sys_prompt, user_prompt, self.llm)
+    course = self.extract_json_from_string(response)
+    self.course = course
+    
+    return self.course
+```
+
+**Use Case**: Progressive learning where each course builds on previous ones (`prior_course`).
+</Accordion>
+
+## Module Integration Example
+
+Here's how all modules work together:
+
+```python
+# 1. Planner decomposes task
+sub_tasks = planner.decompose_task(
+    "Create a report with charts",
+    tool_descriptions
+)
+# Result: ['create_data_file', 'generate_chart', 'create_pdf']
+
+# 2. For each subtask, Retriever finds relevant tools
+relevant_tools = retriever.retrieve_tool_name('generate_chart', k=3)
+# Result: ['matplotlib_bar_chart', 'plotly_line_chart', 'seaborn_heatmap']
+
+# 3. Executor generates code using retrieved examples
+code, invoke = executor.generate_tool(
+    'generate_chart',
+    'Create a bar chart from data.csv',
+    'Python',
+    pre_tasks_info={'create_data_file': {'result': 'data.csv'}},
+    relevant_code=retriever.retrieve_tool_code_pair(relevant_tools)
+)
+
+# 4. Executor runs the code
+state = executor.execute_tool(code, invoke, 'Python')
+
+# 5. Executor judges the result
+reasoning, status, score = executor.judge_tool(
+    code, 'Create a bar chart', state, next_action
+)
+
+# 6. If successful and high quality, store for future use
+if status == 'Complete' and score >= 0.8:
+    executor.store_tool('generate_chart', code)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tools" icon="wrench" href="/concepts/tools">
+    Learn about the tool repository and management system
+  </Card>
+  <Card title="Environments" icon="server" href="/concepts/environments">
+    Understand execution environments and OS interaction
+  </Card>
+</CardGroup>

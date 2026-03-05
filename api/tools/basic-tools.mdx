@@ -1,0 +1,183 @@
+---
+title: 'Basic Tools'
+description: 'Basic utility tools for OS-Copilot'
+icon: 'wrench'
+---
+
+## Overview
+
+Basic tools provide essential utility functions for OS-Copilot operations. These tools handle fundamental tasks like text extraction and file processing.
+
+**Source:** `oscopilot/tool_repository/basic_tools/`
+
+## TextExtractor
+
+The `TextExtractor` class provides functionality to extract content from files using the OS-Copilot agent.
+
+### Class Definition
+
+```python
+class TextExtractor:
+    def __init__(self, agent)
+```
+
+Extracts text content from files by leveraging the OS-Copilot agent's capabilities.
+
+#### Parameters
+
+<ParamField path="agent" type="Agent" required>
+  The OS-Copilot agent instance used to execute extraction tasks.
+</ParamField>
+
+#### Attributes
+
+<ResponseField name="agent" type="Agent">
+  The agent instance used for file operations.
+</ResponseField>
+
+<ResponseField name="prompt" type="str">
+  The prompt template used for text extraction tasks.
+</ResponseField>
+
+### Methods
+
+#### extract_file_content
+
+```python
+def extract_file_content(self, file_path: str) -> str
+```
+
+Extract the content of a file at the specified path.
+
+<ParamField path="file_path" type="str" required>
+  The path to the file from which to extract content.
+</ParamField>
+
+**Returns:** The extracted file content as a string.
+
+**Example:**
+
+```python
+from oscopilot.tool_repository.basic_tools import TextExtractor
+
+# Initialize with an agent
+extractor = TextExtractor(agent)
+
+# Extract content from a file
+content = extractor.extract_file_content("/path/to/document.txt")
+print(content)
+```
+
+## Tool Structure
+
+Basic tools in OS-Copilot follow a consistent structure:
+
+### Tool Components
+
+1. **Initialization**: Tools are initialized with necessary dependencies (typically an agent instance)
+2. **Prompt Templates**: Tools use predefined prompts from `oscopilot.prompts.friday_pt`
+3. **Execution**: Tools leverage the agent's `run()` method to execute tasks
+4. **Return Values**: Results are extracted from the agent's tool node execution chain
+
+### Design Pattern
+
+```python
+class CustomTool:
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
+        self.prompt = prompt['custom_prompt_key']
+    
+    def perform_action(self, input_param):
+        """
+        Perform a custom action using the agent.
+        """
+        task = self.prompt.format(param=input_param)
+        self.agent.run(task)
+        result = list(self.agent.planner.tool_node.values())[-1].return_val
+        return result
+```
+
+## Creating Custom Basic Tools
+
+To create a custom basic tool:
+
+1. **Define the Class**: Inherit from a base class or create a standalone class
+2. **Initialize with Agent**: Accept an agent instance in the constructor
+3. **Load Prompt Template**: Import and use prompts from `oscopilot.prompts.friday_pt`
+4. **Implement Methods**: Create methods that format prompts and execute via the agent
+5. **Extract Results**: Retrieve return values from the agent's tool execution chain
+
+### Example: Custom File Processor
+
+```python
+from oscopilot.utils.utils import send_chat_prompts
+from oscopilot.prompts.friday_pt import prompt
+
+class FileProcessor:
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
+        self.process_prompt = prompt['file_process_prompt']
+    
+    def process_file(self, file_path, operation):
+        """
+        Process a file with a specific operation.
+        
+        Args:
+            file_path (str): Path to the file
+            operation (str): Operation to perform
+            
+        Returns:
+            str: Result of the operation
+        """
+        task = self.process_prompt.format(
+            file_path=file_path,
+            operation=operation
+        )
+        self.agent.run(task)
+        result = list(self.agent.planner.tool_node.values())[-1].return_val
+        return result
+```
+
+## Integration with OS-Copilot
+
+Basic tools are imported and used throughout the OS-Copilot system:
+
+```python
+from oscopilot.tool_repository.basic_tools import TextExtractor
+
+# In your agent workflow
+class MyAgent:
+    def __init__(self):
+        self.text_extractor = TextExtractor(self)
+    
+    def process_document(self, doc_path):
+        # Extract content using basic tool
+        content = self.text_extractor.extract_file_content(doc_path)
+        # Process the content
+        return self.analyze(content)
+```
+
+## Best Practices
+
+1. **Agent Dependency**: Always pass the agent instance to basic tools for execution capabilities
+2. **Prompt Management**: Use centralized prompt templates from `oscopilot.prompts.friday_pt`
+3. **Error Handling**: Implement proper error handling for file operations
+4. **Return Value Extraction**: Use the consistent pattern of extracting from `agent.planner.tool_node.values()`
+5. **Documentation**: Provide clear docstrings describing the tool's purpose and parameters
+
+## Available Basic Tools
+
+<CardGroup cols={1}>
+  <Card title="TextExtractor" icon="file-lines">
+    Extract content from files using the OS-Copilot agent
+  </Card>
+</CardGroup>
+
+## Notes
+
+- Basic tools rely on the OS-Copilot agent's execution framework
+- Tools use prompt templates defined in `oscopilot/prompts/friday_pt.py`
+- Return values are accessed through the agent's tool node execution chain
+- Basic tools are designed for lightweight, frequently-used operations

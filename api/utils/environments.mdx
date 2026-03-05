@@ -1,0 +1,424 @@
+---
+title: Environments
+description: Environment classes for executing code in different languages and managing OS interactions
+---
+
+## Overview
+
+The environments module provides classes for executing code in various languages (Python, Shell, AppleScript) and managing working directories. It includes a base environment class and a unified environment manager.
+
+## Classes
+
+### BaseEnv
+
+A base class for environment configurations in action-based systems. Provides foundational attributes and methods for managing environments, including timeouts, working directories, and environmental states.
+
+```python
+class BaseEnv:
+    """Base class for environment configurations in action-based systems."""
+```
+
+#### Initialization
+
+```python
+def __init__(self) -> None
+```
+
+Sets up the working directory, applies a default timeout, and prepares the environment state. Creates the working directory if it doesn't exist.
+
+**Attributes:**
+<ResponseField name="_name" type="str">
+  The name of the environment (class name)
+</ResponseField>
+
+<ResponseField name="timeout" type="int" default="300">
+  Timeout for code execution in seconds
+</ResponseField>
+
+<ResponseField name="working_dir" type="str">
+  Absolute path to the working directory (from Config)
+</ResponseField>
+
+<ResponseField name="env_state" type="EnvState | None">
+  Current state of the environment
+</ResponseField>
+
+#### Methods
+
+<ParamField path="step" type="method">
+  Executes a command within the environment.
+  
+  **Parameters:**
+  - `_command`: The command to be executed
+  
+  **Returns:**
+  - `EnvState`: The state of the environment after executing the command
+  
+  **Note:** Must be implemented by subclasses
+  
+  ```python
+  state = env.step(command)
+  ```
+</ParamField>
+
+<ParamField path="stop" type="method">
+  Halts code execution without terminating state.
+  
+  ```python
+  env.stop()
+  ```
+</ParamField>
+
+<ParamField path="terminate" type="method">
+  Terminates the environment state completely.
+  
+  ```python
+  env.terminate()
+  ```
+</ParamField>
+
+<ParamField path="reset" type="method">
+  Resets the environment to its initial state.
+  
+  ```python
+  env.reset()
+  ```
+</ParamField>
+
+<ParamField path="list_working_dir" type="method">
+  Lists the contents of the working directory in a detailed format.
+  
+  **Returns:**
+  - `str`: Detailed listing of directory contents (name, size, type)
+  
+  ```python
+  contents = env.list_working_dir()
+  print(contents)
+  # Output:
+  # file.txt    1024 bytes    File
+  # data/       4096 bytes    Directory
+  ```
+</ParamField>
+
+#### Properties
+
+<ResponseField name="name" type="str">
+  The name of the environment (read-only property)
+  
+  ```python
+  env_name = env.name
+  ```
+</ResponseField>
+
+### Env
+
+A unified environment class for executing code in various languages. Manages multiple language environments and provides a unified interface for code execution.
+
+```python
+class Env(BaseEnv):
+    """Environment for executing code in various languages."""
+```
+
+#### Initialization
+
+```python
+def __init__(self)
+```
+
+Sets up supported languages and initializes the active languages dictionary.
+
+**Supported Languages:**
+- Python (via Jupyter kernel)
+- Shell (bash, sh, zsh)
+- AppleScript
+
+**Attributes:**
+<ResponseField name="languages" type="list">
+  List of supported language classes
+</ResponseField>
+
+<ResponseField name="_active_languages" type="dict">
+  Dictionary of currently active language instances
+</ResponseField>
+
+#### Methods
+
+<ParamField path="get_language" type="method">
+  Gets the language class based on the provided language name or alias.
+  
+  **Parameters:**
+  - `language` (str): The name or alias of the language
+  
+  **Returns:**
+  - `class | None`: The language class or None if not found
+  
+  ```python
+  lang_class = env.get_language('python')
+  # Also accepts aliases
+  lang_class = env.get_language('py')
+  ```
+</ParamField>
+
+<ParamField path="step" type="method">
+  Executes a step of code in the specified language.
+  
+  **Parameters:**
+  - `language` (str): The name or alias of the language
+  - `code` (str): The code to execute
+  - `stream` (bool): Whether to stream output (default: False)
+  - `display` (bool): Whether to display output (default: False)
+  
+  **Returns:**
+  - `EnvState`: The state after executing the code
+  
+  ```python
+  code = "print('Hello, World!')"
+  state = env.step('python', code)
+  print(state.result)  # Output from execution
+  print(state.error)   # Any errors
+  print(state.pwd)     # Current working directory
+  print(state.ls)      # Directory listing
+  ```
+</ParamField>
+
+<ParamField path="_streaming_run" type="method">
+  Executes code in the specified language and streams the output.
+  
+  **Parameters:**
+  - `language` (str): The name or alias of the language
+  - `code` (str): The code to execute
+  - `display` (bool): Whether to display output (default: False)
+  
+  **Yields:**
+  - `dict`: Output chunks generated during execution
+  
+  **Output Format:**
+  ```python
+  {"type": "console", "format": "output", "content": "printed output"}
+  {"type": "console", "format": "active_line", "content": "5"}
+  {"type": "image", "format": "base64.png", "content": "<base64>"}
+  ```
+</ParamField>
+
+<ParamField path="stop" type="method">
+  Stops the execution of all active languages.
+  
+  ```python
+  env.stop()
+  ```
+</ParamField>
+
+<ParamField path="terminate" type="method">
+  Terminates all active language environments.
+  
+  ```python
+  env.terminate()
+  ```
+</ParamField>
+
+## Environment State
+
+### EnvState
+
+Represents the state of an environment after command execution.
+
+```python
+@dataclass
+class EnvState:
+    command: List[str] = field(default_factory=list)
+    result: Optional[str] = ''
+    error: Optional[str] = None
+    pwd: Optional[str] = ''
+    ls: Optional[str] = ''
+```
+
+**Fields:**
+<ResponseField name="command" type="List[str]">
+  The command(s) that were executed
+</ResponseField>
+
+<ResponseField name="result" type="str">
+  The output result from execution
+</ResponseField>
+
+<ResponseField name="error" type="str | None">
+  Any error messages (None if no errors)
+</ResponseField>
+
+<ResponseField name="pwd" type="str">
+  Current working directory path
+</ResponseField>
+
+<ResponseField name="ls" type="str">
+  Listing of current directory contents
+</ResponseField>
+
+## Language-Specific Environments
+
+### PythonJupyterEnv
+
+Executes Python code using an IPython Jupyter kernel.
+
+**Properties:**
+- `file_extension`: "py"
+- `name`: "Python"
+- `aliases`: ["py", "API"]
+
+**Key Features:**
+- Manages Jupyter kernel lifecycle
+- Captures stdout, stderr, and display outputs
+- Supports matplotlib images
+- Active line tracking for debugging
+
+### Shell
+
+Executes shell commands (bash, sh, zsh).
+
+**Properties:**
+- `file_extension`: "sh"
+- `name`: "Shell"
+- `aliases`: ["bash", "sh", "zsh"]
+
+**Key Features:**
+- Platform-specific shell detection
+- Active line markers for execution tracking
+- End-of-execution detection
+
+## Usage Examples
+
+### Basic Environment Setup
+
+```python
+from oscopilot.environments import Env
+from oscopilot.utils.config import setup_config
+
+# Initialize configuration
+args = setup_config()
+
+# Create environment
+env = Env()
+
+# List working directory
+print(env.list_working_dir())
+```
+
+### Executing Python Code
+
+```python
+from oscopilot.environments import Env
+
+env = Env()
+
+# Execute Python code
+python_code = """
+import numpy as np
+data = np.array([1, 2, 3, 4, 5])
+print(f"Mean: {data.mean()}")
+"""
+
+state = env.step('python', python_code)
+print(f"Result: {state.result}")
+print(f"Error: {state.error}")
+```
+
+### Executing Shell Commands
+
+```python
+from oscopilot.environments import Env
+
+env = Env()
+
+# Execute shell command
+shell_code = "ls -la"
+state = env.step('bash', shell_code)
+print(state.result)
+```
+
+### Streaming Execution
+
+```python
+from oscopilot.environments import Env
+
+env = Env()
+
+code = """
+for i in range(5):
+    print(f"Iteration {i}")
+"""
+
+# Stream output as it becomes available
+for chunk in env.step('python', code, stream=True, display=True):
+    if chunk.get('format') == 'output':
+        print(chunk['content'])
+```
+
+### Working Directory Management
+
+```python
+from oscopilot.environments import BaseEnv
+from oscopilot.utils.config import setup_config, Config
+
+# Setup with custom working directory
+args = setup_config()
+args.working_dir = '/path/to/workspace'
+Config.initialize(args)
+
+# Create environment with custom directory
+env = BaseEnv()
+print(f"Working directory: {env.working_dir}")
+print(env.list_working_dir())
+```
+
+### Error Handling
+
+```python
+from oscopilot.environments import Env
+
+env = Env()
+
+# Execute code that might fail
+code = "print(undefined_variable)"
+state = env.step('python', code)
+
+if state.error:
+    print(f"Execution failed: {state.error}")
+    # Handle error...
+else:
+    print(f"Success: {state.result}")
+```
+
+## Output Formats
+
+When using streaming execution, the environment yields dictionaries with the following formats:
+
+### Console Output
+```python
+{"type": "console", "format": "output", "content": "text output"}
+```
+
+### Active Line (for debugging)
+```python
+{"type": "console", "format": "active_line", "content": "5"}
+```
+
+### Image Output
+```python
+{"type": "image", "format": "base64.png", "content": "<base64_data>"}
+{"type": "image", "format": "base64.jpeg", "content": "<base64_data>"}
+```
+
+### HTML/JavaScript
+```python
+{"type": "code", "format": "html", "content": "<html>..."}
+{"type": "code", "format": "javascript", "content": "console.log(...)"}
+```
+
+## Notes
+
+- Environment classes automatically manage working directories from the global Config
+- Python environments use Jupyter kernels for robust execution and output capture
+- Shell environments add active line tracking for better debugging
+- All environments support stopping and terminating execution
+- The working directory is created automatically if it doesn't exist
+- Relative working directory paths are converted to absolute paths
+- Python kernels are terminated automatically when the environment is terminated

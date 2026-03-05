@@ -1,0 +1,443 @@
+---
+title: "API Server Deployment"
+description: "Deploy FRIDAY's tool services as REST APIs using FastAPI"
+icon: "server"
+---
+
+OS-Copilot includes a FastAPI-based server for deploying tool services as REST APIs. This allows you to access FRIDAY's capabilities remotely and integrate them into other applications.
+
+## API Server Overview
+
+The API server (`api_server.py`) provides HTTP endpoints for various tool services:
+
+- Bing Search (web and image search)
+- Audio-to-text transcription
+- Image captioning
+- Wolfram Alpha queries
+
+You can easily add your own custom services to the server.
+
+## Server Architecture
+
+The server is built with FastAPI and uses a modular router system:
+
+```python oscopilot/tool_repository/manager/api_server.py
+from fastapi import FastAPI
+import dotenv
+
+dotenv.load_dotenv(dotenv_path='.env', override=True)
+app = FastAPI()
+
+# Import service routers
+from oscopilot.tool_repository.api_tools.bing.bing_service import router as bing_router
+from oscopilot.tool_repository.api_tools.audio2text.audio2text_service import router as audio2text_router
+from oscopilot.tool_repository.api_tools.image_caption.image_caption_service import router as image_caption_router
+from oscopilot.tool_repository.api_tools.wolfram_alpha.wolfram_alpha import router as wolfram_alpha_router
+
+# Service registry
+services = {
+    "bing": bing_router,
+    "autio2text": audio2text_router,
+    "image_caption": image_caption_router,
+    "wolfram_alpha": wolfram_alpha_router
+}
+
+# Active services
+server_list = ["bing", "autio2text", "image_caption"]
+
+# Include active routers
+for service in server_list:
+    if service in services:
+        app.include_router(services[service])
+```
+
+## Starting the Server
+
+<Steps>
+  <Step title="Configure Environment">
+    Set up your `.env` file with required API keys:
+
+    ```bash .env
+    # OpenAI (for embeddings and LLM)
+    OPENAI_API_KEY=sk-...
+    OPENAI_ORGANIZATION=org-...
+    OPENAI_BASE_URL=https://api.openai.com/v1
+    
+    # Bing Search API
+    BING_SEARCH_V7_SUBSCRIPTION_KEY=your_key_here
+    
+    # Wolfram Alpha
+    WOLFRAM_ALPHA_APPID=your_app_id_here
+    ```
+  </Step>
+
+  <Step title="Run the Server">
+    Start the API server:
+
+    ```bash
+    cd oscopilot/tool_repository/manager
+    python api_server.py
+    ```
+
+    Or run directly:
+
+    ```bash
+    python -m oscopilot.tool_repository.manager.api_server
+    ```
+
+    The server starts on `http://0.0.0.0:8079` by default.
+  </Step>
+
+  <Step title="Verify Server is Running">
+    Check the server health:
+
+    ```bash
+    curl http://localhost:8079/docs
+    ```
+
+    This opens the automatic FastAPI documentation interface.
+  </Step>
+</Steps>
+
+## Configuration Options
+
+Customize the server by modifying `api_server.py`:
+
+```python
+if __name__ == "__main__":
+    import uvicorn
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",  # Change to limit access
+        port=8079,        # Change port as needed
+        # Additional options:
+        # workers=4,      # Number of worker processes
+        # reload=True,    # Auto-reload on code changes (dev only)
+    )
+```
+
+## Using the API Endpoints
+
+Once running, you can access the various services:
+
+<CodeGroup>
+```bash Bing Web Search
+curl -X POST "http://localhost:8079/bing/search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Python tutorials",
+    "top_k": 5
+  }'
+```
+
+```bash Image Search
+curl -X POST "http://localhost:8079/bing/image_search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "sunset photos",
+    "count": 10
+  }'
+```
+
+```bash Audio to Text
+curl -X POST "http://localhost:8079/audio2text/transcribe" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@/path/to/audio.mp3"
+```
+
+```bash Image Caption
+curl -X POST "http://localhost:8079/image_caption/caption" \
+  -H "Content-Type: multipart/form-data" \
+  -F "image=@/path/to/image.jpg"
+```
+</CodeGroup>
+
+## Adding Custom Logging
+
+The server includes logging middleware:
+
+```python oscopilot/tool_repository/manager/api_server.py
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        print(f"Incoming request: {request.method} {request.url}")
+        try:
+            response = await call_next(request)
+        except Exception as e:
+            print(f"Request error: {str(e)}")
+            raise e from None
+        else:
+            print(f"Outgoing response: {response.status_code}")
+        return response
+
+app.add_middleware(LoggingMiddleware)
+```
+
+## Creating Custom Service Endpoints
+
+<Steps>
+  <Step title="Create Service Module">
+    Create a new service file:
+
+    ```python oscopilot/tool_repository/api_tools/my_service/my_service.py
+    from fastapi import APIRouter, HTTPException
+    from pydantic import BaseModel
+    
+    router = APIRouter(prefix="/my_service", tags=["my_service"])
+    
+    class MyRequest(BaseModel):
+        query: str
+        param: int = 10
+    
+    @router.post("/process")
+    async def process_request(request: MyRequest):
+        try:
+            # Your service logic here
+            result = do_something(request.query, request.param)
+            return {"result": result}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    ```
+  </Step>
+
+  <Step title="Register Service">
+    Add your service to `api_server.py`:
+
+    ```python
+    from oscopilot.tool_repository.api_tools.my_service.my_service import router as my_service_router
+    
+    services = {
+        "bing": bing_router,
+        "my_service": my_service_router,  # Add here
+        # ... other services
+    }
+    
+    server_list = ["bing", "my_service", "image_caption"]
+    ```
+  </Step>
+
+  <Step title="Test Your Endpoint">
+    Restart the server and test:
+
+    ```bash
+    curl -X POST "http://localhost:8079/my_service/process" \
+      -H "Content-Type: application/json" \
+      -d '{"query": "test", "param": 5}'
+    ```
+  </Step>
+</Steps>
+
+## Example: Bing Search Service
+
+Here's how a complete service is structured:
+
+```python oscopilot/tool_repository/api_tools/bing/bing_service.py
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from .bing_api_v2 import BingAPIV2
+
+router = APIRouter(prefix="/bing", tags=["bing"])
+bing_api = BingAPIV2()
+
+class SearchRequest(BaseModel):
+    query: str
+    top_k: int = 5
+
+@router.post("/search")
+async def search(request: SearchRequest):
+    """Perform web search using Bing API"""
+    try:
+        results = bing_api.search(request.query, request.top_k)
+        return {"results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/image_search")
+async def image_search(query: str, count: int = 10):
+    """Search for images using Bing API"""
+    try:
+        results = bing_api.image_search(query, count)
+        return {"images": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+## Production Deployment
+
+### Using Uvicorn with Systemd
+
+Create a systemd service file:
+
+```ini /etc/systemd/system/friday-api.service
+[Unit]
+Description=FRIDAY API Server
+After=network.target
+
+[Service]
+Type=simple
+User=your_user
+WorkingDirectory=/path/to/OS-Copilot
+Environment="PATH=/path/to/venv/bin"
+ExecStart=/path/to/venv/bin/python -m oscopilot.tool_repository.manager.api_server
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl enable friday-api
+sudo systemctl start friday-api
+sudo systemctl status friday-api
+```
+
+### Using Docker
+
+Create a Dockerfile:
+
+```dockerfile Dockerfile
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8079
+
+CMD ["python", "-m", "oscopilot.tool_repository.manager.api_server"]
+```
+
+Build and run:
+
+```bash
+docker build -t friday-api .
+docker run -d -p 8079:8079 --env-file .env friday-api
+```
+
+### Using Nginx Reverse Proxy
+
+Configure Nginx:
+
+```nginx /etc/nginx/sites-available/friday-api
+server {
+    listen 80;
+    server_name api.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8079;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+## Security Considerations
+
+<Warning>
+The default server configuration allows access from any IP. Implement proper security measures for production.
+</Warning>
+
+### API Key Authentication
+
+Add authentication to your endpoints:
+
+```python
+from fastapi import Security, HTTPException
+from fastapi.security import APIKeyHeader
+
+API_KEY = os.getenv("API_KEY")
+api_key_header = APIKeyHeader(name="X-API-Key")
+
+async def verify_api_key(api_key: str = Security(api_key_header)):
+    if api_key != API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+    return api_key
+
+@router.post("/protected-endpoint")
+async def protected_route(api_key: str = Security(verify_api_key)):
+    return {"message": "Access granted"}
+```
+
+### Rate Limiting
+
+Implement rate limiting:
+
+```python
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(429, _rate_limit_exceeded_handler)
+
+@router.post("/search")
+@limiter.limit("10/minute")
+async def search(request: Request, search_req: SearchRequest):
+    # Your endpoint logic
+    pass
+```
+
+## Monitoring and Health Checks
+
+Add health check endpoints:
+
+```python
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.get("/ready")
+async def readiness_check():
+    # Check if all services are initialized
+    return {"ready": True}
+```
+
+## Client Example
+
+Access the API from Python:
+
+```python
+import requests
+
+class FridayAPIClient:
+    def __init__(self, base_url="http://localhost:8079"):
+        self.base_url = base_url
+    
+    def search(self, query, top_k=5):
+        response = requests.post(
+            f"{self.base_url}/bing/search",
+            json={"query": query, "top_k": top_k}
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def caption_image(self, image_path):
+        with open(image_path, 'rb') as f:
+            files = {'image': f}
+            response = requests.post(
+                f"{self.base_url}/image_caption/caption",
+                files=files
+            )
+        response.raise_for_status()
+        return response.json()
+
+# Usage
+client = FridayAPIClient()
+results = client.search("Python tutorials")
+print(results)
+```
+
+## Next Steps
+
+- [Use the frontend UI](/guides/frontend-ui) to interact with the API visually
+- [Add custom tools](/guides/adding-tools) and expose them via API endpoints
+- Check the [API Reference](/api-reference/api-server) for detailed endpoint documentation

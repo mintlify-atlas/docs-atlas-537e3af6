@@ -1,0 +1,399 @@
+---
+title: 'Frontend UI'
+description: 'Use the Electron-based frontend to interact with FRIDAY through a graphical interface'
+icon: 'desktop'
+---
+
+OS-Copilot includes a React-based frontend application that provides a user-friendly interface for interacting with FRIDAY. The UI allows you to submit tasks, view execution progress, and manage the agent through a graphical interface.
+
+## Overview
+
+The frontend is built with:
+
+- **React**: For the UI components and state management
+- **Node.js**: For the development environment
+- **Electron** (optional): For desktop application deployment
+
+## Prerequisites
+
+Before setting up the frontend, ensure you have:
+
+- Node.js (v14 or higher)
+- npm (comes with Node.js)
+- OS-Copilot backend installed and configured
+
+## Installation
+
+<Steps>
+  <Step title="Navigate to Frontend Directory">
+    ```bash
+    cd fronted/
+    ```
+  </Step>
+
+  <Step title="Install Dependencies">
+    ```bash
+    npm install
+    ```
+
+    This installs all required packages defined in `package.json`.
+  </Step>
+
+  <Step title="Configure Environment">
+    Copy the environment template:
+
+    ```bash
+    cp .env.dist .env
+    ```
+
+    Edit `.env` with your configuration:
+
+    ```bash .env
+    # Required: Path to backend directory
+    REACT_APP_PATH=../
+    
+    # Optional: Conda environment name
+    REACT_APP_CONDA=oscopilot
+    
+    # Optional: Proxy for LLM API calls
+    REACT_APP_PROXY=http://127.0.0.1:7890
+    
+    # Optional: Hugging Face mirror
+    REACT_APP_MIRROR=https://hf-mirror.com
+    ```
+  </Step>
+</Steps>
+
+## Configuration Options
+
+The `.env` file supports the following settings:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `REACT_APP_PATH` | Yes | Absolute or relative path to the backend directory |
+| `REACT_APP_CONDA` | No | Name of conda environment to use for backend execution |
+| `REACT_APP_PROXY` | No | HTTP proxy URL for API requests (useful if behind firewall) |
+| `REACT_APP_MIRROR` | No | Mirror site for Hugging Face models |
+
+## Running for Development
+
+Start the development server:
+
+```bash
+npm start
+```
+
+This will:
+- Start the React development server
+- Open the application in your default browser
+- Enable hot-reloading for code changes
+- Run on `http://localhost:3000` by default
+
+<Tip>
+The development server automatically reloads when you make changes to the source code.
+</Tip>
+
+## Building for Production
+
+<Steps>
+  <Step title="Build the Application">
+    ```bash
+    npm run build
+    ```
+
+    This creates an optimized production build in the `dist/` directory.
+  </Step>
+
+  <Step title="Copy Environment Configuration">
+    ```bash
+    cp .env.dist dist/.env
+    ```
+
+    Edit `dist/.env` with your production settings.
+  </Step>
+
+  <Step title="Deploy">
+    Serve the `dist/` directory using a web server:
+
+    ```bash
+    # Using Python's built-in server
+    cd dist
+    python -m http.server 8080
+    ```
+
+    Or use a production web server like Nginx or Apache.
+  </Step>
+</Steps>
+
+## Using the Frontend
+
+Once the frontend is running, you can interact with FRIDAY through the UI:
+
+### Submitting Tasks
+
+1. **Enter Your Task**: Type your request in the input field
+   - Example: "Copy any text file containing 'agent' to a new folder named 'agents'"
+   - Example: "Plot AAPL and META's normalized stock prices"
+
+2. **Submit**: Click the submit button or press Enter
+
+3. **View Progress**: Watch as FRIDAY:
+   - Plans the task by breaking it into subtasks
+   - Retrieves relevant tools from the repository
+   - Executes code to complete each subtask
+   - Shows execution results in real-time
+
+### Task Examples
+
+Here are some example tasks you can try:
+
+<CodeGroup>
+```text File Operations
+Copy any text file located in the working_dir/document directory 
+that contains the word 'agent' to a new folder named 'agents'
+```
+
+```text Data Analysis
+Read the sales_data.csv file, calculate monthly totals, 
+and create a bar chart
+```
+
+```text Web Research
+Search for recent news about artificial intelligence, 
+summarize the top 5 articles, and save to a file
+```
+
+```text System Tasks
+List all Python files in the current directory that were 
+modified in the last 7 days
+```
+</CodeGroup>
+
+## Frontend Architecture
+
+The frontend communicates with the backend through subprocess execution:
+
+```javascript
+// Example: Frontend makes request to backend
+const runTask = async (task) => {
+  const backendPath = process.env.REACT_APP_PATH;
+  const condaEnv = process.env.REACT_APP_CONDA;
+  
+  // Execute backend script
+  const command = condaEnv 
+    ? `conda run -n ${condaEnv} python ${backendPath}/quick_start.py --query "${task}"`
+    : `python ${backendPath}/quick_start.py --query "${task}"`;
+  
+  // Run and capture output
+  const result = await executeCommand(command);
+  return result;
+};
+```
+
+## Project Structure
+
+```
+fronted/
+├── public/           # Static assets
+│   ├── index.html
+│   └── favicon.ico
+├── src/              # React source code
+│   ├── components/   # UI components
+│   ├── pages/        # Page components
+│   ├── services/     # API/backend communication
+│   ├── App.js        # Main application component
+│   └── index.js      # Entry point
+├── .env              # Environment configuration
+├── .env.dist         # Environment template
+├── package.json      # Dependencies and scripts
+└── README.md         # Frontend documentation
+```
+
+## Customizing the UI
+
+You can customize the frontend by modifying the React components:
+
+### Adding New Components
+
+```javascript src/components/CustomComponent.js
+import React from 'react';
+
+const CustomComponent = ({ data }) => {
+  return (
+    <div className="custom-component">
+      <h2>Custom Feature</h2>
+      <p>{data}</p>
+    </div>
+  );
+};
+
+export default CustomComponent;
+```
+
+### Styling
+
+Modify CSS files or use inline styles:
+
+```css src/styles/custom.css
+.task-input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.submit-button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+```
+
+## Integrating with API Server
+
+If you've deployed the [API server](/guides/api-deployment), you can configure the frontend to use it:
+
+```javascript src/services/api.js
+const API_BASE_URL = 'http://localhost:8079';
+
+export const searchWeb = async (query) => {
+  const response = await fetch(`${API_BASE_URL}/bing/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, top_k: 5 })
+  });
+  return response.json();
+};
+
+export const captionImage = async (imageFile) => {
+  const formData = new FormData();
+  formData.append('image', imageFile);
+  
+  const response = await fetch(`${API_BASE_URL}/image_caption/caption`, {
+    method: 'POST',
+    body: formData
+  });
+  return response.json();
+};
+```
+
+## Troubleshooting
+
+### Port Already in Use
+
+If port 3000 is already in use:
+
+```bash
+# Use a different port
+PORT=3001 npm start
+```
+
+### Backend Connection Issues
+
+Verify your `REACT_APP_PATH` is correct:
+
+```bash
+# Test if backend is accessible
+cd $REACT_APP_PATH
+python quick_start.py --query "test task"
+```
+
+### Environment Variables Not Loading
+
+Restart the development server after changing `.env`:
+
+```bash
+# Stop the server (Ctrl+C) and restart
+npm start
+```
+
+### Conda Environment Not Found
+
+Verify conda environment exists:
+
+```bash
+conda env list
+
+# If needed, create the environment
+conda create -n oscopilot python=3.10
+conda activate oscopilot
+pip install -r requirements.txt
+```
+
+## Production Deployment Options
+
+### Static Hosting
+
+Deploy the built frontend to static hosting services:
+
+```bash
+# Build for production
+npm run build
+
+# Deploy to Vercel
+vercel --prod
+
+# Or deploy to Netlify
+netlify deploy --prod --dir=dist
+```
+
+### Docker Deployment
+
+Create a Dockerfile:
+
+```dockerfile Dockerfile
+FROM node:16-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+EXPOSE 3000
+
+CMD ["npx", "serve", "-s", "dist", "-l", "3000"]
+```
+
+Build and run:
+
+```bash
+docker build -t friday-frontend .
+docker run -p 3000:3000 friday-frontend
+```
+
+## Desktop Application
+
+Package as an Electron desktop app:
+
+```bash
+# Install Electron
+npm install --save-dev electron electron-builder
+
+# Build desktop app
+npm run electron-build
+```
+
+<Tip>
+The Electron version provides a native desktop experience with access to file system and OS features.
+</Tip>
+
+## Best Practices
+
+1. **Environment Separation**: Use different `.env` files for development and production
+2. **Error Handling**: Implement proper error boundaries in React components
+3. **Loading States**: Show loading indicators during backend execution
+4. **Result Display**: Format execution results for better readability
+5. **Task History**: Store previous tasks for easy re-execution
+
+## Next Steps
+
+- [Build custom agents](/guides/building-agents) to extend functionality
+- [Deploy the API server](/guides/api-deployment) for remote access
+- [Add custom tools](/guides/adding-tools) that appear in the UI

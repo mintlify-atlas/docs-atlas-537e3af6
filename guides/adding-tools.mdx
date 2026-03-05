@@ -1,0 +1,315 @@
+---
+title: "Adding Custom Tools"
+description: "Extend FRIDAY's capabilities by adding new tools to the repository"
+icon: "wrench"
+---
+
+OS-Copilot uses a dynamic tool repository where agents can store, retrieve, and reuse tools. You can extend FRIDAY's capabilities by adding your own custom tools.
+
+## Tool Structure
+
+Tools in OS-Copilot consist of three components:
+
+1. **Code**: The executable Python code
+2. **Description**: A natural language description of what the tool does
+3. **Task Name**: A unique identifier for the tool
+
+## Tool Manager Overview
+
+The `ToolManager` class handles all tool operations:
+
+```python oscopilot/tool_repository/manager/tool_manager.py
+class ToolManager:
+    """
+    Manages tools within a repository, including adding, deleting, 
+    and retrieving tool information.
+    
+    Uses a vector database for efficient similarity-based retrieval.
+    """
+    def __init__(self, generated_tool_repo_dir=None):
+        self.generated_tools = {}  # Maps tool names to their info
+        self.generated_tool_repo_dir = generated_tool_repo_dir
+        self.vectordb_path = f"{generated_tool_repo_dir}/vectordb"
+        
+        # Load existing tools
+        with open(f"{self.generated_tool_repo_dir}/generated_tools.json") as f:
+            self.generated_tools = json.load(f)
+            
+        # Initialize vector database for similarity search
+        self.vectordb = Chroma(
+            collection_name="tool_vectordb",
+            embedding_function=OpenAIEmbeddings(),
+            persist_directory=self.vectordb_path,
+        )
+```
+
+## Adding Tools Programmatically
+
+<Steps>
+  <Step title="Create Tool Information">
+    Define your tool with a name, code, and description:
+
+    ```python
+    info = {
+        "task_name": "read_csv_file",
+        "code": """
+import pandas as pd
+
+def read_csv_file(file_path):
+    \"\"\"Read a CSV file and return a DataFrame\"\"\"
+    df = pd.read_csv(file_path)
+    return df
+""",
+        "description": "Read a CSV file from the given path and return it as a pandas DataFrame"
+    }
+    ```
+  </Step>
+
+  <Step title="Initialize ToolManager">
+    Create a ToolManager instance:
+
+    ```python
+    from oscopilot import ToolManager
+
+    tool_manager = ToolManager(
+        generated_tool_repo_dir='oscopilot/tool_repository/generated_tools'
+    )
+    ```
+  </Step>
+
+  <Step title="Add the Tool">
+    Use the `add_new_tool()` method:
+
+    ```python
+    tool_manager.add_new_tool(info)
+    print(f"Successfully added tool: {info['task_name']}")
+    ```
+
+    This will:
+    - Save the code to `tool_code/{task_name}.py`
+    - Save the description to `tool_description/{task_name}.txt`
+    - Update `generated_tools.json`
+    - Add embeddings to the vector database
+  </Step>
+</Steps>
+
+## Adding Tools via Command Line
+
+The ToolManager provides a CLI for managing tools:
+
+```bash
+# Add a new tool
+python -m oscopilot.tool_repository.manager.tool_manager \
+  --add \
+  --tool_name my_custom_tool \
+  --tool_path /path/to/tool.py \
+  --generated_tool_repo_path oscopilot/tool_repository/generated_tools
+
+# Delete a tool
+python -m oscopilot.tool_repository.manager.tool_manager \
+  --delete \
+  --tool_name my_custom_tool \
+  --generated_tool_repo_path oscopilot/tool_repository/generated_tools
+```
+
+<Tip>
+When adding via CLI, ensure your tool file contains a docstring at the top. The first line of the docstring will be extracted as the description.
+</Tip>
+
+## Tool Format Requirements
+
+For CLI-based tool addition, your Python file should follow this format:
+
+```python
+"""
+Brief description of what the tool does.
+"""
+
+import required_libraries
+
+def tool_function(args):
+    """Detailed docstring"""
+    # Implementation
+    return result
+
+# Optional: Additional helper functions
+```
+
+The tool manager uses regex to extract the description:
+
+```python oscopilot/tool_repository/manager/tool_manager.py
+pattern = r'"""\s*\n\s*(.*?)[\.\ n]'
+match = re.search(pattern, code)
+if match:
+    description = match.group(1)
+```
+
+## Retrieving Tools
+
+The ToolManager uses semantic search to find relevant tools:
+
+```python
+# Retrieve top-k similar tools
+tool_names = tool_manager.retrieve_tool_name(
+    query="Read data from a spreadsheet",
+    k=5
+)
+
+# Get tool descriptions
+descriptions = tool_manager.retrieve_tool_description(tool_names)
+
+# Get tool code
+code_snippets = tool_manager.retrieve_tool_code(tool_names)
+```
+
+The retrieval process:
+
+```python oscopilot/tool_repository/manager/tool_manager.py
+def retrieve_tool_name(self, query, k=10):
+    """Retrieve related tool names via similarity search"""
+    k = min(self.vectordb._collection.count(), k)
+    if k == 0:
+        return []
+    
+    # Perform similarity search in vector database
+    docs_and_scores = self.vectordb.similarity_search_with_score(query, k=k)
+    
+    tool_names = []
+    for doc, score in docs_and_scores:
+        tool_names.append(doc.metadata["name"])
+    
+    return tool_names
+```
+
+## Tool Properties
+
+Access tool information through properties:
+
+```python
+# Get all tool code as a single string
+all_code = tool_manager.programs
+
+# Get dictionary of tool descriptions
+descriptions_dict = tool_manager.descriptions
+
+# Get list of all tool names
+all_names = list(tool_manager.tool_names)
+
+# Check if a tool exists
+if tool_manager.exist_tool("my_tool"):
+    code = tool_manager.get_tool_code("my_tool")
+```
+
+## Deleting Tools
+
+Remove tools from the repository:
+
+```python
+tool_manager.delete_tool("tool_name")
+```
+
+This removes:
+- The entry from the vector database
+- The entry from `generated_tools.json`
+- The code file from `tool_code/`
+- The description file from `tool_description/`
+
+## Complete Example
+
+Here's a full example of adding and using a custom tool:
+
+```python
+from oscopilot import ToolManager
+import os
+
+# Initialize tool manager
+tool_manager = ToolManager(
+    generated_tool_repo_dir='oscopilot/tool_repository/generated_tools'
+)
+
+# Define a custom tool
+tool_info = {
+    "task_name": "process_json_data",
+    "code": """
+import json
+
+def process_json_data(json_path, key_to_extract):
+    \"\"\"Load JSON file and extract specific key\"\"\"
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    return data.get(key_to_extract, None)
+""",
+    "description": "Load a JSON file and extract a specific key from the data"
+}
+
+# Add the tool
+tool_manager.add_new_tool(tool_info)
+
+# Later, retrieve similar tools
+related_tools = tool_manager.retrieve_tool_name(
+    "I need to parse JSON files",
+    k=3
+)
+print(f"Found related tools: {related_tools}")
+
+# Get the code for a specific tool
+if "process_json_data" in related_tools:
+    code = tool_manager.get_tool_code("process_json_data")
+    print("Tool code:", code)
+```
+
+## API Tools
+
+OS-Copilot also supports API-based tools. These are defined in `oscopilot/tool_repository/api_tools/`:
+
+<CodeGroup>
+```python Bing Search Tool
+from oscopilot.tool_repository.api_tools.bing import BingAPIV2
+
+bing = BingAPIV2()
+results = bing.search("Python tutorials", top_k=5)
+```
+
+```python Wolfram Alpha
+from oscopilot.tool_repository.api_tools.wolfram_alpha import wolfram_alpha
+
+result = wolfram_alpha.query("integrate x^2")
+```
+
+```python Image Caption
+from oscopilot.tool_repository.api_tools.image_caption import image_caption_service
+
+caption = image_caption_service.caption_image("/path/to/image.jpg")
+```
+</CodeGroup>
+
+## Tool Manager Methods Reference
+
+| Method | Description |
+|--------|-------------|
+| `add_new_tool(info)` | Add a new tool to the repository |
+| `delete_tool(tool_name)` | Remove a tool from the repository |
+| `exist_tool(tool_name)` | Check if a tool exists |
+| `get_tool_code(tool_name)` | Get code for a specific tool |
+| `retrieve_tool_name(query, k)` | Find k similar tools |
+| `retrieve_tool_description(tool_names)` | Get descriptions for tools |
+| `retrieve_tool_code(tool_names)` | Get code for multiple tools |
+
+## Best Practices
+
+1. **Clear Descriptions**: Write concise, descriptive tool descriptions for better retrieval
+2. **Unique Names**: Use unique, descriptive names for your tools
+3. **Documentation**: Include docstrings in your tool code
+4. **Error Handling**: Implement proper error handling in tool code
+5. **Dependencies**: Document any required dependencies in comments
+6. **Testing**: Test tools independently before adding to repository
+
+<Warning>
+Tools are stored with embeddings in a vector database. If you manually edit files, make sure to update the database by re-adding the tool.
+</Warning>
+
+## Next Steps
+
+- [Build custom agents](/guides/building-agents) that use your tools
+- [Enable self-learning](/guides/self-learning) to automatically generate tools
+- Check the [Tool Manager API reference](/api/tools/tool-manager) for detailed documentation

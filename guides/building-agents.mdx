@@ -1,0 +1,286 @@
+---
+title: 'Building Custom Agents'
+description: 'Learn how to create your own custom agents by extending BaseAgent'
+icon: 'robot'
+---
+
+OS-Copilot's agent architecture is designed to be flexible and extensible. You can create custom agents by extending the `BaseAgent` class and implementing your own planner, retriever, and executor modules.
+
+## Agent Architecture Overview
+
+Every agent in OS-Copilot consists of three main components:
+
+- **Planner**: Decomposes complex tasks into manageable subtasks
+- **Retriever**: Finds relevant tools and code from the tool repository
+- **Executor**: Generates and executes code to complete tasks
+
+## BaseAgent Class
+
+The `BaseAgent` class is the foundation for all agents. It provides core utilities:
+
+```python oscopilot/agents/base_agent.py
+class BaseAgent:
+    """
+    BaseAgent serves as the foundational class for all agents types.
+    Provides a unified interface for further specialization.
+    """
+    def __init__(self):
+        self.system_version = get_os_version()
+        
+    def extract_information(self, message, begin_str='[BEGIN]', end_str='[END]'):
+        """Extract substrings between markers"""
+        # Implementation...
+        
+    def extract_json_from_string(self, text):
+        """Extract JSON data from text"""
+        # Implementation...
+```
+
+## Creating a Custom Agent
+
+<Steps>
+  <Step title="Extend BaseAgent">
+    Create a new class that inherits from `BaseAgent`:
+
+    ```python
+    from oscopilot.agents.base_agent import BaseAgent
+
+    class MyCustomAgent(BaseAgent):
+        def __init__(self, planner, retriever, executor, tool_manager, config):
+            super().__init__()
+            self.config = config
+            # Initialize your components
+    ```
+  </Step>
+
+  <Step title="Initialize Components">
+    Set up your planner, retriever, and executor:
+
+    ```python
+    def __init__(self, planner, retriever, executor, tool_manager, config):
+        super().__init__()
+        self.config = config
+        
+        # Initialize tool manager
+        tool_mgr = tool_manager(config.generated_tool_repo_path)
+        
+        # Initialize modules
+        self.planner = planner(prompt_dict)
+        self.retriever = retriever(prompt_dict, tool_mgr)
+        self.executor = executor(prompt_dict, tool_mgr, config.max_repair_iterations)
+    ```
+  </Step>
+
+  <Step title="Implement the Run Method">
+    Define how your agent processes tasks:
+
+    ```python
+    def run(self, task):
+        """Execute the given task"""
+        # 1. Planning phase
+        sub_tasks = self.planning(task)
+        
+        # 2. Execution phase
+        while sub_tasks:
+            sub_task = sub_tasks.pop(0)
+            execution_state = self.executing(sub_task, task)
+            
+            # 3. Self-refinement phase
+            is_completed, needs_replan = self.self_refining(sub_task, execution_state)
+            
+            if needs_replan:
+                continue
+            if not is_completed:
+                break
+    ```
+  </Step>
+
+  <Step title="Implement Core Methods">
+    Add your planning, executing, and refinement logic:
+
+    ```python
+    def planning(self, task):
+        """Decompose task into subtasks"""
+        tool_names = self.retriever.retrieve_tool_name(task)
+        tool_descriptions = self.retriever.retrieve_tool_description_pair(tool_names)
+        self.planner.decompose_task(task, tool_descriptions)
+        return self.planner.sub_task_list
+        
+    def executing(self, sub_task, original_task):
+        """Execute a subtask"""
+        # Generate and execute code
+        code, invoke = self.executor.generate_tool(sub_task, ...)
+        state = self.executor.execute_tool(code, invoke, node_type)
+        return ExecutionState(state, ...)
+        
+    def self_refining(self, sub_task, execution_state):
+        """Judge and repair if needed"""
+        judgement = self.executor.judge_tool(code, description, state)
+        if judgement.status == 'Amend':
+            repair_result = self.executor.repair_tool(...)
+        return is_completed, needs_replan
+    ```
+  </Step>
+</Steps>
+
+## Real Example: Light Friday
+
+Here's a simplified agent from the codebase that demonstrates the core concepts:
+
+```python examples/light_friday/light_friday.py
+from oscopilot.modules.base_module import BaseModule
+
+class LightFriday(BaseModule):
+    def __init__(self, args):
+        super().__init__()
+        self.args = args
+    
+    def execute_tool(self, code, lang):
+        state = self.environment.step(lang, code)
+        return_info = ''
+        if state.result:
+            return_info = '**Execution Result**: ' + state.result.strip()
+        if state.error:
+            return_info = '\n**Execution Error**: ' + state.error.strip()
+        return return_info.strip()
+
+    def run(self, task):
+        message = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        while True:
+            response = send_chat_prompts(message, self.llm)
+            message.append({"role": "system", "content": response})
+
+            code, lang = extract_code(response)
+            if code:
+                result = self.execute_tool(code, lang)
+            
+            if 'Execution Complete' in response:
+                break
+```
+
+<Tip>
+Light Friday is a streamlined version that doesn't use the full planner-retriever-executor architecture, making it perfect for understanding the basics.
+</Tip>
+
+## Full-Featured Example: FridayAgent
+
+For a production-ready example with planning, retrieval, and self-correction:
+
+```python oscopilot/agents/friday_agent.py
+class FridayAgent(BaseAgent):
+    def __init__(self, planner, retriever, executor, Tool_Manager, config):
+        super().__init__()
+        self.config = config
+        tool_manager = Tool_Manager(config.generated_tool_repo_path)
+        
+        self.planner = planner(prompt['planning_prompt'])
+        self.retriever = retriever(prompt['retrieve_prompt'], tool_manager)
+        self.executor = executor(prompt['execute_prompt'], tool_manager, 
+                                config.max_repair_iterations)
+        
+    def run(self, task):
+        self.planner.reset_plan()
+        sub_tasks_list = self.planning(task)
+
+        while self.planner.sub_task_list:
+            sub_task = self.planner.sub_task_list.pop(0)
+            execution_state = self.executing(sub_task, task)
+            isTaskCompleted, isReplan = self.self_refining(sub_task, execution_state)
+            
+            if isReplan: 
+                continue
+            if not isTaskCompleted:
+                break
+```
+
+## Custom Planner Implementation
+
+Extend `BaseModule` to create custom planners:
+
+```python
+from oscopilot.modules.base_module import BaseModule
+
+class MyPlanner(BaseModule):
+    def __init__(self, prompt):
+        super().__init__()
+        self.prompt = prompt
+        self.sub_task_list = []
+        
+    def decompose_task(self, task, tool_descriptions):
+        # Use LLM to break down the task
+        response = send_chat_prompts(sys_prompt, user_prompt, self.llm)
+        decompose_json = self.extract_json_from_string(response)
+        # Parse and create task graph
+        self.create_tool_graph(decompose_json)
+        self.topological_sort()
+```
+
+## Custom Executor Implementation
+
+Create executors that generate and run code:
+
+```python
+class MyExecutor(BaseModule):
+    def __init__(self, prompt, tool_manager, max_iter=3):
+        super().__init__()
+        self.prompt = prompt
+        self.tool_manager = tool_manager
+        self.max_iter = max_iter
+        
+    def generate_tool(self, task_name, task_description, tool_type, 
+                      pre_tasks_info, relevant_code):
+        # Generate code using LLM
+        response = send_chat_prompts(sys_prompt, user_prompt, self.llm)
+        code = self.extract_code(response, tool_type)
+        return code, invoke
+        
+    def execute_tool(self, code, invoke, node_type):
+        # Execute in appropriate environment
+        state = self.environment.step(node_type, code)
+        return state
+```
+
+## Usage Example
+
+Once you've created your custom agent:
+
+```python
+from oscopilot.utils import setup_config, setup_pre_run
+from my_custom_agent import MyCustomAgent
+from oscopilot import ToolManager
+
+args = setup_config()
+args.query = "Your task here"
+task = setup_pre_run(args)
+
+agent = MyCustomAgent(
+    MyPlanner, 
+    MyRetriever, 
+    MyExecutor, 
+    ToolManager, 
+    config=args
+)
+agent.run(task=task)
+```
+
+<Warning>
+Make sure to properly handle exceptions and implement error recovery mechanisms in your custom agent.
+</Warning>
+
+## Best Practices
+
+1. **Inherit Properly**: Always call `super().__init__()` in your constructors
+2. **Error Handling**: Implement robust exception handling in your `run()` method
+3. **Logging**: Use Python's logging module to track agent behavior
+4. **State Management**: Keep track of execution state for debugging
+5. **Tool Storage**: Store successful tools for reuse using the tool manager
+
+## Next Steps
+
+- [Add custom tools](/guides/adding-tools) to enhance your agent's capabilities
+- [Learn about self-learning](/guides/self-learning) to make your agent improve over time
+- Check the [API Reference](/api/agents/friday-agent) for detailed class documentation

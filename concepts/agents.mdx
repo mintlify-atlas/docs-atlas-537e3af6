@@ -1,0 +1,407 @@
+---
+title: Agents
+description: Understanding agents in OS-Copilot and their lifecycle
+---
+
+## What are Agents?
+
+Agents in OS-Copilot are autonomous entities that orchestrate the execution of complex tasks by coordinating multiple modules (Planner, Retriever, Executor, Learner). They manage the entire task lifecycle from decomposition through execution to self-improvement.
+
+## Agent Hierarchy
+
+```python
+BaseAgent
+└── FridayAgent
+```
+
+## BaseAgent
+
+The `BaseAgent` class provides foundational functionality for all agent types:
+
+```python
+# From base_agent.py:6-25
+class BaseAgent:
+    """
+    BaseAgent serves as the foundational class for all agents types within the system.
+    
+    This class initializes the core attributes common across different agents, providing
+    a unified interface for further specialization.
+    """
+    def __init__(self):
+        self.system_version = get_os_version()
+```
+
+### Core Utilities
+
+BaseAgent provides helper methods used throughout the framework:
+
+<Accordion title="extract_information()">
+Extracts content between markers in LLM responses:
+
+```python
+# From base_agent.py:27-47
+def extract_information(self, message, begin_str='[BEGIN]', end_str='[END]'):
+    """
+    Extracts substrings from a message that are enclosed within specified 
+    begin and end markers.
+    """
+    result = []
+    _begin = message.find(begin_str)
+    _end = message.find(end_str)
+    while not (_begin == -1 or _end == -1):
+        result.append(message[_begin + len(begin_str):_end])
+        message = message[_end + len(end_str):]
+        _begin = message.find(begin_str)
+        _end = message.find(end_str)
+    return result
+```
+
+**Use Case**: Extracting return values marked with `<return>...</return>` tags.
+</Accordion>
+
+<Accordion title="extract_json_from_string()">
+Parses JSON data from markdown code blocks:
+
+```python
+# From base_agent.py:49-81
+def extract_json_from_string(self, text):
+    """
+    Identifies and extracts JSON data embedded within a given string.
+    This method searches for JSON data within a string, specifically looking for
+    JSON blocks that are marked with ```json``` notation.
+    """
+    json_regex = r'```json\s*\n\{[\s\S]*?\n\}\s*```'
+    matches = re.findall(json_regex, text)
+    
+    if matches:
+        json_data = matches[0].replace('```json', '').replace('```', '').strip()
+        try:
+            parsed_json = json.loads(json_data)
+            return parsed_json
+        except json.JSONDecodeError as e:
+            return f"Error parsing JSON data: {e}"
+    else:
+        return "No JSON data found in the string."
+```
+
+**Use Case**: Parsing task decomposition results from the Planner module.
+</Accordion>
+
+## FridayAgent
+
+The `FridayAgent` is the primary agent implementation that integrates all modules:
+
+### Initialization
+
+```python
+# From friday_agent.py:17-43
+class FridayAgent(BaseAgent):
+    def __init__(self, planner, retriever, executor, Tool_Manager, config):
+        super().__init__()
+        self.config = config
+        tool_manager = Tool_Manager(config.generated_tool_repo_path)
+        self.planner = planner(prompt['planning_prompt'])
+        self.retriever = retriever(prompt['retrieve_prompt'], tool_manager)
+        self.executor = executor(prompt['execute_prompt'], tool_manager, 
+                                config.max_repair_iterations)
+        self.score = self.config.score
+        self.task_status = TaskStatusCode.START
+        self.inner_monologue = InnerMonologue()
+        try:
+            check_os_version(self.system_version)
+        except ValueError as e:
+            print(e)
+```
+
+<Note>
+FridayAgent requires a configuration object with `generated_tool_repo_path`, `max_repair_iterations`, and `score` threshold.
+</Note>
+
+### Agent Lifecycle
+
+The agent follows a four-phase lifecycle for each task:
+
+<Steps>
+  <Step title="Planning">
+    Decompose the task into subtasks with dependencies
+  </Step>
+  <Step title="Retrieval">
+    Find relevant tools for each subtask
+  </Step>
+  <Step title="Execution">
+    Generate and run code to complete subtasks
+  </Step>
+  <Step title="Refinement">
+    Judge results and repair or replan if needed
+  </Step>
+</Steps>
+
+## Phase 1: Planning
+
+The planning phase breaks down complex tasks:
+
+```python
+# From friday_agent.py:129-151
+def planning(self, task):
+    """
+    Decomposes a given high-level task into a list of sub-tasks by retrieving 
+    relevant tool names and descriptions.
+    """
+    # Retrieve relevant tools
+    retrieve_tool_name = self.retriever.retrieve_tool_name(task)
+    retrieve_tool_description_pair = self.retriever.retrieve_tool_description_pair(
+        retrieve_tool_name
+    )
+
+    # Decompose task
+    try:
+        self.planner.decompose_task(task, retrieve_tool_description_pair)
+    except Exception as e:
+        print(f"api call failed: {str(e)}")
+        return
+    
+    return self.planner.sub_task_list
+```
+
+**Output**: A topologically sorted list of subtasks ready for sequential execution.
+
+## Phase 2: Execution
+
+The execution phase handles different task types:
+
+<Tabs>
+  <Tab title="Python Tasks">
+    ```python
+    # From friday_agent.py:176-179
+    if node_type == 'Python':
+        # Retrieve existing tool
+        retrieve_name = self.retriever.retrieve_tool_name(description, 3)
+        relevant_code = self.retriever.retrieve_tool_code_pair(retrieve_name)
+    ```
+    
+    Python tasks can leverage previously stored tools as examples.
+  </Tab>
+  
+  <Tab title="API Tasks">
+    ```python
+    # From friday_agent.py:192-194
+    if node_type == 'API':
+        api_path = self.executor.extract_API_Path(description)
+        code = self.executor.api_tool(description, api_path, pre_tasks_info)
+    ```
+    
+    API tasks use OpenAPI specifications for code generation.
+  </Tab>
+  
+  <Tab title="QA Tasks">
+    ```python
+    # From friday_agent.py:181-186
+    if node_type == 'QA':
+        if self.planner.tool_num == 1:
+            result = self.executor.question_and_answer_tool(pre_tasks_info, 
+                                                           original_task, original_task)
+        else:
+            result = self.executor.question_and_answer_tool(pre_tasks_info, 
+                                                           original_task, description)
+    ```
+    
+    Question-answering tasks use LLM to synthesize information.
+  </Tab>
+</Tabs>
+
+## Phase 3: Self-Refinement
+
+The refinement phase ensures task completion:
+
+```python
+# From friday_agent.py:74-127
+def self_refining(self, tool_name, execution_state: ExecutionState):
+    """
+    Analyzes and potentially refines the execution of a tool based on its 
+    current execution state.
+    """
+    isTaskCompleted = False
+    isReplan = False
+    score = 0
+    
+    state, node_type, description, code, result, relevant_code = \
+        execution_state.get_all_state()
+    
+    if node_type in ['Python', 'Shell', 'AppleScript']:
+        judgement = self.judging(tool_name, state, code, description)
+        score = judgement.score
+        
+        if judgement.status == 'Replan':
+            print("The current task requires replanning...")
+            new_sub_task_list = self.replanning(tool_name, judgement.critique)
+            print(f"The new task list obtained after planning is: {new_sub_task_list}")
+            isReplan = True
+            
+        elif judgement.status == 'Amend':
+            repairing_result = self.repairing(tool_name, code, description, 
+                                             state, judgement.critique, 
+                                             judgement.status)
+            if repairing_result.status == 'Complete':
+                isTaskCompleted = True
+            elif repairing_result.status == 'Replan':
+                # Handle replanning after repair attempts
+                isReplan = True
+            score = repairing_result.score
+            result = repairing_result.result
+        else:
+            isTaskCompleted = True
+            
+        # Store successful high-quality tools
+        if node_type == 'Python' and isTaskCompleted and score >= self.score:
+            self.executor.store_tool(tool_name, code)
+            print(f"{tool_name} has been stored in the tool repository.")
+    else:
+        isTaskCompleted = True
+    
+    if isTaskCompleted:
+        self.inner_monologue.result = result
+        self.planner.update_tool(tool_name, result, relevant_code, True, node_type)
+    
+    return isTaskCompleted, isReplan
+```
+
+### Refinement Strategies
+
+<CardGroup cols={2}>
+  <Card title="Repair" icon="wrench">
+    Fix code errors while maintaining the same approach
+  </Card>
+  <Card title="Replan" icon="rotate">
+    Generate new subtasks when the approach is fundamentally wrong
+  </Card>
+</CardGroup>
+
+## Self-Learning Capabilities
+
+FridayAgent learns from successful executions:
+
+<AccordionGroup>
+  <Accordion title="Automatic Tool Storage">
+    When a Python task completes successfully with a high score, the generated code is automatically stored in the tool repository:
+    
+    ```python
+    if node_type == 'Python' and isTaskCompleted and score >= self.score:
+        self.executor.store_tool(tool_name, code)
+    ```
+  </Accordion>
+  
+  <Accordion title="Quality Filtering">
+    Only tools that meet or exceed the configured quality threshold are stored, ensuring repository quality over time.
+  </Accordion>
+  
+  <Accordion title="Vector Indexing">
+    Stored tools are indexed in a vector database, making them discoverable for future similar tasks.
+  </Accordion>
+</AccordionGroup>
+
+## Repairing vs Replanning
+
+The agent intelligently chooses between two recovery strategies:
+
+### Repairing (Code Amendment)
+
+```python
+# From friday_agent.py:263-318
+def repairing(self, tool_name, code, description, state, critique, status):
+    """
+    Attempts to repair the execution of a tool by amending its code based on 
+    the critique received and the current execution state.
+    """
+    tool_node = self.planner.tool_node[tool_name]
+    next_action = tool_node.next_action
+    pre_tasks_info = self.planner.get_pre_tasks_info(tool_name)
+    trial_times = 0
+    score = 0
+    
+    while (trial_times < self.executor.max_iter and status == 'Amend'):
+        trial_times += 1
+        print(f"current amend times: {trial_times}")
+        
+        try:
+            new_code, invoke = self.executor.repair_tool(code, description, 
+                                                        tool_node.node_type, state, 
+                                                        critique, pre_tasks_info)
+        except Exception as e:
+            print(f"api call failed: {str(e)}")
+            return
+        
+        code = new_code
+        state = self.executor.execute_tool(code, invoke, tool_node.node_type)
+        result = state.result
+        
+        if state.error == None:
+            critique, status, score = self.executor.judge_tool(code, description, 
+                                                              state, next_action)
+            if status == 'Complete':
+                break
+            elif status == 'Replan':
+                break
+    
+    return RepairingResult(status, code, critique, score, result)
+```
+
+**When to Use**: Syntax errors, minor logic errors, fixable runtime errors.
+
+### Replanning (Task Restructuring)
+
+```python
+# From friday_agent.py:240-261
+def replanning(self, tool_name, reasoning):
+    """
+    Initiates the replanning process for a task based on new insights or 
+    failures encountered during execution.
+    """
+    relevant_tool_name = self.retriever.retrieve_tool_name(reasoning)
+    relevant_tool_description_pair = self.retriever.retrieve_tool_description_pair(
+        relevant_tool_name
+    )
+    
+    try:
+        self.planner.replan_task(reasoning, tool_name, 
+                                relevant_tool_description_pair)
+    except Exception as e:
+        print(f"api call failed: {str(e)}")
+        return
+    
+    return self.planner.sub_task_list
+```
+
+**When to Use**: Wrong approach, missing dependencies, environmental issues.
+
+## Complete Execution Example
+
+```python
+from oscopilot import FridayAgent
+from oscopilot.modules.planner import FridayPlanner
+from oscopilot.modules.retriever import FridayRetriever
+from oscopilot.modules.executor import FridayExecutor
+from oscopilot.tool_repository.manager import ToolManager
+
+# Initialize the agent
+agent = FridayAgent(
+    planner=FridayPlanner,
+    retriever=FridayRetriever,
+    executor=FridayExecutor,
+    Tool_Manager=ToolManager,
+    config=config
+)
+
+# Run a task
+agent.run("Create a folder named 'reports' and generate a summary PDF")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Modules" icon="puzzle-piece" href="/concepts/modules">
+    Deep dive into Planner, Retriever, Executor, and Learner
+  </Card>
+  <Card title="Tools" icon="wrench" href="/concepts/tools">
+    Learn about the tool repository and management
+  </Card>
+</CardGroup>

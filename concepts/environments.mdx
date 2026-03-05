@@ -1,0 +1,584 @@
+---
+title: Environments
+description: Understanding execution environments and OS interaction in OS-Copilot
+---
+
+## Overview
+
+OS-Copilot uses environment abstractions to execute code across different platforms and execution contexts. Each environment provides isolated, controlled execution with state tracking and error handling.
+
+## Environment Types
+
+<CardGroup cols={3}>
+  <Card title="Python/Jupyter" icon="python">
+    IPython kernel-based execution for Python code
+  </Card>
+  <Card title="Bash" icon="terminal">
+    Shell command execution on Linux/macOS
+  </Card>
+  <Card title="AppleScript" icon="apple">
+    macOS automation and app control
+  </Card>
+</CardGroup>
+
+## Environment Architecture
+
+All environments inherit from `BaseEnv`:
+
+```python
+BaseEnv
+├── PythonJupyterEnv
+├── BashEnv
+├── AppleScriptEnv
+└── SubprocessEnv
+```
+
+## BaseEnv
+
+The `BaseEnv` class provides foundational environment functionality:
+
+```python
+# From base_env.py:7-33
+class BaseEnv:
+    """
+    A base class for environment configurations in action-based systems.
+    
+    This class provides foundational attributes and methods for managing environments,
+    including timeouts, working directories, and environmental states.
+    """
+    
+    def __init__(self) -> None:
+        """
+        Initializes the environment with default settings.
+        """
+        self._name: str = self.__class__.__name__
+        self.timeout: int = 300
+        
+        working_dir = Config.get_parameter('working_dir')
+        if os.path.isabs(working_dir):
+            self.working_dir = working_dir
+        else:
+            self.working_dir = os.path.abspath(
+                os.path.join(__file__, "..", "..", "..", working_dir)
+            )
+        
+        if not os.path.exists(self.working_dir):
+            os.makedirs(self.working_dir)
+        
+        self.env_state: Union[EnvState, None] = None
+```
+
+### Core Methods
+
+<Accordion title="list_working_dir()">
+Provides directory listings for context:
+
+```python
+# From base_env.py:56-92
+def list_working_dir(self):
+    """
+    Lists the contents of the working directory in a detailed format.
+    
+    Returns a string representation similar to the output of the 'ls' command,
+    including file/directory names, sizes, and types.
+    """
+    directory = self.working_dir
+    
+    # Check if the directory exists
+    if not os.path.exists(directory):
+        return f"Directory '{directory}' does not exist."
+    
+    # List files and directories
+    files_and_dirs = os.listdir(directory)
+    
+    # Create a list to store the details
+    details = []
+    
+    for name in files_and_dirs:
+        # Get the full path
+        full_path = os.path.join(directory, name)
+        
+        # Get file or directory size
+        size = os.path.getsize(full_path)
+        
+        # Check if it's a file or directory
+        if os.path.isdir(full_path):
+            doc_type = 'Directory'
+        else:
+            doc_type = 'File'
+        
+        details.append(f"{name}\t {size} bytes\t {doc_type}")
+    
+    return "\n".join(details)
+```
+
+**Purpose**: Provides file system context to the LLM for informed code generation.
+</Accordion>
+
+<Accordion title="step()">
+Executes commands (must be implemented by subclasses):
+
+```python
+# From base_env.py:94-110
+def step(self, _command) -> EnvState:
+    """
+    Executes a command within the environment.
+    
+    This method is intended to be implemented by subclasses, defining how commands
+    are processed and their effects on the environment state.
+    """
+    raise NotImplementedError
+```
+
+**Return Type**: `EnvState` object containing:
+- `result`: Output/return value
+- `error`: Error messages
+- `pwd`: Current working directory
+- `ls`: Directory listing
+</Accordion>
+
+<Accordion title="reset()">
+Resets environment to initial state:
+
+```python
+# From base_env.py:112-123
+def reset(self):
+    """
+    Resets the environment to its initial state.
+    """
+    working_dir = Config.get_parameter('working_dir')
+    if os.path.isabs(working_dir):
+        self.working_dir = working_dir
+    else:
+        self.working_dir = os.path.abspath(
+            os.path.join(__file__, "..", "..", "..", working_dir)
+        )
+```
+
+**Use Case**: Clean slate between task executions.
+</Accordion>
+
+## PythonJupyterEnv
+
+The Python environment uses IPython kernel for execution:
+
+### Initialization
+
+```python
+# From py_jupyter_env.py:34-62
+class PythonJupyterEnv(BaseEnv):
+    file_extension = "py"
+    name = "Python"
+    aliases = ["py", "API"]
+    
+    def __init__(self):
+        super().__init__()
+        
+        # Get the path to the current Python executable
+        python_executable = sys.executable
+        
+        # Create and start KernelManager
+        self.km = KernelManager(
+            kernel_name='python3',
+            kernel_cmd=[python_executable, '-m', 'ipykernel_launcher', 
+                       '-f', '{connection_file}']
+        )
+        self.km.start_kernel(env=os.environ.copy())
+        
+        # Start kernel client
+        self.kc = self.km.client()
+        self.kc.start_channels()
+        
+        # Wait for kernel to be ready
+        while not self.kc.is_alive():
+            time.sleep(0.1)
+        time.sleep(0.5)
+        
+        self.listener_thread = None
+        self.finish_flag = False
+```
+
+<Note>
+The environment creates a persistent IPython kernel that maintains state across executions within a single agent session.
+</Note>
+
+### Code Execution
+
+<Accordion title="step()">
+Executes Python code in the kernel:
+
+```python
+# From py_jupyter_env.py:123-165
+def step(self, code):
+    """
+    Executes a step of Python code.
+    
+    Yields:
+        dict: Output messages generated during execution.
+    """
+    self.finish_flag = False
+    try:
+        try:
+            preprocessed_code = self.preprocess_code(code)
+        except:
+            # Preprocessing errors are non-fatal - just use original code
+            preprocessed_code = code
+        
+        message_queue = queue.Queue()
+        self._execute_code(preprocessed_code, message_queue)
+        yield from self._capture_output(message_queue)
+    except GeneratorExit:
+        raise
+    except:
+        content = traceback.format_exc()
+        yield {"type": "console", "format": "output", "content": content}
+```
+</Accordion>
+
+<Accordion title="preprocess_code()">
+Enhances code with active line tracking:
+
+```python
+# From py_jupyter_env.py:322-348
+def preprocess_code(self, code):
+    """
+    Preprocesses the Python code before execution.
+    """
+    code = code.strip()
+    
+    # Add print commands that tell us what the active line is
+    # but don't do this if any line starts with ! or %
+    if not any(line.strip().startswith(("!", "%")) for line in code.split("\n")):
+        code = add_active_line_prints(code)
+    
+    # Remove any whitespace lines, as this will break indented blocks
+    code_lines = code.split("\n")
+    code_lines = [c for c in code_lines if c.strip() != ""]
+    code = "\n".join(code_lines)
+    
+    return code
+```
+
+**Purpose**: Adds `##active_line{n}##` markers to track execution progress.
+</Accordion>
+
+### Message Handling
+
+The environment captures different message types from IPython:
+
+<Tabs>
+  <Tab title="Stream Output">
+    ```python
+    # Standard output/print statements
+    if msg["msg_type"] == "stream":
+        line, active_line = self.detect_active_line(content["text"])
+        if active_line:
+            message_queue.put({
+                "type": "console",
+                "format": "active_line",
+                "content": active_line,
+            })
+        message_queue.put({
+            "type": "console", 
+            "format": "output", 
+            "content": line
+        })
+    ```
+  </Tab>
+  
+  <Tab title="Errors">
+    ```python
+    # Error tracebacks
+    elif msg["msg_type"] == "error":
+        content = "\n".join(content["traceback"])
+        # Remove ANSI color codes
+        ansi_escape = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+        content = ansi_escape.sub("", content)
+        message_queue.put({
+            "type": "console",
+            "format": "output",
+            "content": content,
+        })
+    ```
+  </Tab>
+  
+  <Tab title="Display Data">
+    ```python
+    # Rich output (images, HTML, etc.)
+    elif msg["msg_type"] in ["display_data", "execute_result"]:
+        data = content["data"]
+        if "image/png" in data:
+            message_queue.put({
+                "type": "image",
+                "format": "base64.png",
+                "content": data["image/png"],
+            })
+        elif "text/html" in data:
+            message_queue.put({
+                "type": "code",
+                "format": "html",
+                "content": data["text/html"],
+            })
+        # ... other formats
+    ```
+  </Tab>
+</Tabs>
+
+## Working Directory Management
+
+All environments maintain a working directory for file operations:
+
+### Directory Configuration
+
+```python
+# Configuration in config file
+working_dir = "/path/to/workspace"
+
+# Or relative path (resolved from package root)
+working_dir = "./workspace"
+```
+
+### Directory Context in Prompts
+
+The working directory and its contents are provided to the LLM:
+
+```python
+# From friday_planner.py:53-64
+files_and_folders = self.environment.list_working_dir()
+user_prompt = self.prompt['_USER_TASK_DECOMPOSE_PROMPT'].format(
+    system_version=self.system_version,
+    task=task,
+    tool_list=tool_description_pair,
+    api_list=api_list,
+    working_dir=self.environment.working_dir,
+    files_and_folders=files_and_folders
+)
+```
+
+**Why this matters**:
+- LLM can reference existing files
+- Avoids recreating existing resources
+- Enables file-based task dependencies
+
+## Environment State
+
+Each execution produces an `EnvState` object:
+
+```python
+class EnvState:
+    result: str      # Standard output or return value
+    error: str       # Error messages and tracebacks
+    pwd: str         # Current working directory
+    ls: str          # Directory listing
+```
+
+### State Usage Example
+
+```python
+# Execute code
+state = env.step(node_type, code)
+
+# Check for errors
+if state.error:
+    print(f"Execution failed: {state.error}")
+else:
+    print(f"Result: {state.result}")
+    print(f"Working directory: {state.pwd}")
+    print(f"Files created: {state.ls}")
+```
+
+## OS Interaction Layer
+
+### Platform Detection
+
+```python
+from oscopilot.utils import get_os_version, check_os_version
+
+# Get OS version
+os_version = get_os_version()
+# Returns: "Ubuntu 20.04", "macOS 13.0", "Windows 11", etc.
+
+# Validate OS compatibility
+try:
+    check_os_version(os_version)
+except ValueError as e:
+    print(f"Unsupported OS: {e}")
+```
+
+### Platform-Specific Execution
+
+Environments adapt to the host OS:
+
+<Tabs>
+  <Tab title="Python">
+    Cross-platform - works on all systems
+    
+    ```python
+    # Same code runs everywhere
+    import os
+    os.makedirs('folder')
+    ```
+  </Tab>
+  
+  <Tab title="Bash">
+    Linux and macOS only
+    
+    ```bash
+    # Shell commands
+    mkdir -p folder
+    ls -la
+    ```
+  </Tab>
+  
+  <Tab title="AppleScript">
+    macOS only
+    
+    ```applescript
+    -- macOS automation
+    tell application "Finder"
+        make new folder at desktop
+    end tell
+    ```
+  </Tab>
+</Tabs>
+
+## Timeout Handling
+
+All environments support execution timeouts:
+
+```python
+# From base_env.py:24
+self.timeout: int = 300  # 5 minutes default
+```
+
+**Purpose**:
+- Prevents infinite loops
+- Handles hanging processes
+- Ensures agent responsiveness
+
+## Environment Isolation
+
+Each environment provides isolation:
+
+<AccordionGroup>
+  <Accordion title="Process Isolation">
+    - Python code runs in separate IPython kernel
+    - Shell commands run in subprocess
+    - AppleScript runs in separate process
+    
+    **Benefits**:
+    - Crashes don't affect main agent
+    - Clean termination possible
+    - State can be reset
+  </Accordion>
+  
+  <Accordion title="File System Isolation">
+    - All operations scoped to working directory
+    - Prevents accidental system modifications
+    - Easy cleanup after execution
+    
+    **Note**: Not true sandboxing - code can still access parent directories if explicitly coded to do so.
+  </Accordion>
+  
+  <Accordion title="State Isolation">
+    - Each task gets fresh environment state
+    - Previous executions don't pollute namespace
+    - Predictable, reproducible behavior
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+### Choosing the Right Environment
+
+<CardGroup cols={3}>
+  <Card title="Use Python for" icon="python">
+    - Data processing
+    - API calls
+    - Complex logic
+    - Cross-platform code
+  </Card>
+  <Card title="Use Bash for" icon="terminal">
+    - File operations
+    - System commands
+    - Pipeline operations
+    - Quick scripts
+  </Card>
+  <Card title="Use AppleScript for" icon="apple">
+    - macOS app automation
+    - GUI interactions
+    - System events
+    - Application control
+  </Card>
+</CardGroup>
+
+### Error Handling
+
+```python
+# Always check state.error
+state = executor.execute_tool(code, invoke, node_type)
+
+if state.error:
+    # Attempt repair
+    judgement = executor.judge_tool(code, description, state, next_action)
+    if judgement.status == 'Amend':
+        new_code, invoke = executor.repair_tool(
+            code, description, node_type, state, 
+            judgement.critique, pre_tasks_info
+        )
+        state = executor.execute_tool(new_code, invoke, node_type)
+else:
+    # Success - use state.result
+    result = state.result
+```
+
+### Resource Cleanup
+
+```python
+# Terminate environments when done
+env.terminate()
+
+# Or use context managers (if implemented)
+with PythonJupyterEnv() as env:
+    state = env.step(code)
+    # Environment automatically terminated
+```
+
+## Environment Extensions
+
+You can create custom environments by inheriting from `BaseEnv`:
+
+```python
+from oscopilot.environments.base_env import BaseEnv
+from oscopilot.utils.schema import EnvState
+
+class CustomEnv(BaseEnv):
+    def __init__(self):
+        super().__init__()
+        # Custom initialization
+    
+    def step(self, command) -> EnvState:
+        # Implement custom execution logic
+        result = self._execute_custom(command)
+        return EnvState(
+            result=result.stdout,
+            error=result.stderr,
+            pwd=self.working_dir,
+            ls=self.list_working_dir()
+        )
+    
+    def terminate(self):
+        # Clean up resources
+        pass
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Review how environments fit into the overall architecture
+  </Card>
+  <Card title="Modules" icon="puzzle-piece" href="/concepts/modules">
+    Learn how the Executor uses environments
+  </Card>
+</CardGroup>

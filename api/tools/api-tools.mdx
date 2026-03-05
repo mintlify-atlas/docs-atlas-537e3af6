@@ -1,0 +1,392 @@
+---
+title: 'API Tools'
+description: 'External API integrations for OS-Copilot'
+icon: 'cloud'
+---
+
+## Overview
+
+API tools provide integration with external services and APIs, enabling OS-Copilot to leverage third-party capabilities for audio transcription, web search, image analysis, and computational queries.
+
+**Source:** `oscopilot/tool_repository/api_tools/`
+
+## Audio2TextTool
+
+Transcribe audio files to text using OpenAI's Whisper API.
+
+**Source:** `oscopilot/tool_repository/api_tools/audio2text/audio2text.py`
+
+### Class Definition
+
+```python
+class Audio2TextTool:
+    def __init__(self) -> None
+```
+
+Initializes the audio transcription tool with OpenAI client.
+
+### Methods
+
+#### caption
+
+```python
+def caption(self, audio_file) -> str
+```
+
+Perform voice recognition using the OpenAI Whisper API.
+
+<ParamField path="audio_file" type="file" required>
+  The audio file to transcribe. Supported formats include MP3, MP4, MPEG, MPGA, M4A, WAV, and WEBM.
+</ParamField>
+
+**Returns:** Transcribed text from the audio file.
+
+**Example:**
+
+```python
+from oscopilot.tool_repository.api_tools.audio2text import Audio2TextTool
+
+tool = Audio2TextTool()
+
+with open("audio.mp3", "rb") as audio_file:
+    transcription = tool.caption(audio_file)
+    print(transcription)
+```
+
+## BingAPIV2
+
+Perform web searches and process web page content using Bing Search API.
+
+**Source:** `oscopilot/tool_repository/api_tools/bing/bing_api_v2.py`
+
+### Class Definition
+
+```python
+class BingAPIV2:
+    def __init__(self) -> None
+```
+
+A class for interacting with the Bing Search API and performing subsequent processing on web page data. This class encapsulates functionality to perform web searches, load web pages, chunk and embed text for analysis, summarize web pages, and attend to loaded pages based on specific queries.
+
+### Attributes
+
+<ResponseField name="search_engine" type="BingSearchAPIWrapper">
+  Configured instance for executing searches with Bing's API.
+</ResponseField>
+
+<ResponseField name="web_loader" type="WebPageLoader">
+  Utility for loading web page content.
+</ResponseField>
+
+<ResponseField name="web_chunker" type="RecursiveCharacterTextSplitter">
+  Utility for splitting text into manageable chunks.
+</ResponseField>
+
+<ResponseField name="web_sniptter_embed" type="OpenAIEmbeddings">
+  Embedding model for text chunks.
+</ResponseField>
+
+<ResponseField name="web_summarizer" type="OpenAI">
+  Model for summarizing web page content.
+</ResponseField>
+
+### Methods
+
+#### search
+
+```python
+def search(self, key_words: str, top_k: int = 5, max_retry: int = 3) -> list
+```
+
+Searches for web pages using Bing's API based on provided keywords.
+
+<ParamField path="key_words" type="str" required>
+  The keywords to search for.
+</ParamField>
+
+<ParamField path="top_k" type="int" default="5">
+  The number of search results to return.
+</ParamField>
+
+<ParamField path="max_retry" type="int" default="3">
+  The maximum number of retry attempts upon failure.
+</ParamField>
+
+**Returns:** A list of search results.
+
+**Raises:** `RuntimeError` if the search attempts fail after reaching the maximum number of retries.
+
+**Example:**
+
+```python
+from oscopilot.tool_repository.api_tools.bing import BingAPIV2
+
+bing = BingAPIV2()
+results = bing.search("Python programming", top_k=3)
+for result in results:
+    print(result['name'], result['url'])
+```
+
+#### load_page
+
+```python
+def load_page(self, url: str) -> str
+```
+
+Loads the content of a web page given its URL.
+
+<ParamField path="url" type="str" required>
+  The URL of the web page to load.
+</ParamField>
+
+**Returns:** The content of the web page as a string.
+
+#### summarize_loaded_page
+
+```python
+def summarize_loaded_page(self, page_str: str) -> str
+```
+
+Summarizes the content of a loaded web page using a map-reduce chain.
+
+<ParamField path="page_str" type="str" required>
+  The content of the web page to summarize.
+</ParamField>
+
+**Returns:** The summarized content of the web page. Returns empty string if input is empty.
+
+#### attended_loaded_page
+
+```python
+def attended_loaded_page(self, page_str: str, query_str: str) -> str
+```
+
+Identifies and aggregates content from a loaded web page that is most relevant to a given query.
+
+<ParamField path="page_str" type="str" required>
+  The content of the web page.
+</ParamField>
+
+<ParamField path="query_str" type="str" required>
+  The query string to identify relevant content.
+</ParamField>
+
+**Returns:** The aggregated content from the web page that is most relevant to the query.
+
+**Example:**
+
+```python
+bing = BingAPIV2()
+page_content = bing.load_page("https://example.com")
+relevant_content = bing.attended_loaded_page(
+    page_content,
+    "machine learning algorithms"
+)
+print(relevant_content)
+```
+
+## ImageCaptionTool
+
+Generate captions and descriptions for images using GPT-4 Vision.
+
+**Source:** `oscopilot/tool_repository/api_tools/image_caption/gpt4v_caption.py`
+
+### Class Definition
+
+```python
+class ImageCaptionTool:
+    def __init__(self) -> None
+```
+
+Initializes the image caption tool with OpenAI client.
+
+### Methods
+
+#### caption
+
+```python
+def caption(self, url: str, query: str = "What's in this Image?") -> str
+```
+
+Generate a caption or answer questions about an image using GPT-4 Vision.
+
+<ParamField path="url" type="str" required>
+  The URL of the image or a base64-encoded image string (format: `data:image/jpeg;base64,{base64_string}`).
+</ParamField>
+
+<ParamField path="query" type="str" default="What's in this Image?">
+  The question or prompt about the image.
+</ParamField>
+
+**Returns:** The model's response describing the image or answering the query.
+
+**Example (URL):**
+
+```python
+from oscopilot.tool_repository.api_tools.image_caption import ImageCaptionTool
+
+tool = ImageCaptionTool()
+description = tool.caption(
+    url="https://example.com/image.jpg",
+    query="Describe this image in detail"
+)
+print(description)
+```
+
+**Example (Base64):**
+
+```python
+import base64
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+tool = ImageCaptionTool()
+base64_image = encode_image("photo.jpg")
+description = tool.caption(
+    url=f"data:image/jpeg;base64,{base64_image}",
+    query="What objects are in this image?"
+)
+print(description)
+```
+
+## WolframAlpha
+
+Query WolframAlpha computational knowledge engine.
+
+**Source:** `oscopilot/tool_repository/api_tools/wolfram_alpha/wolfram_alpha.py`
+
+### API Endpoint
+
+```python
+@router.post("/tools/wolframalpha")
+async def wolframalpha_query(item: QueryItem)
+```
+
+FastAPI endpoint for querying WolframAlpha.
+
+### Request Model
+
+```python
+class QueryItem(BaseModel):
+    query: str
+```
+
+<ParamField path="query" type="str" required>
+  The query to send to WolframAlpha.
+</ParamField>
+
+### Response
+
+<ResponseField name="result" type="str">
+  The result from WolframAlpha or "Query failed" if unsuccessful.
+</ResponseField>
+
+**Example:**
+
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/tools/wolframalpha",
+    json={"query": "solve x^2 + 2x + 1 = 0"}
+)
+
+result = response.json()
+print(result['result'])
+```
+
+### Configuration
+
+Requires the `WOLFRAMALPHA_APP_ID` environment variable to be set with your WolframAlpha API key.
+
+```bash
+WOLFRAMALPHA_APP_ID=your_app_id_here
+```
+
+## Common Usage Patterns
+
+### Multi-Modal Information Retrieval
+
+```python
+from oscopilot.tool_repository.api_tools import (
+    BingAPIV2,
+    ImageCaptionTool,
+    Audio2TextTool
+)
+
+# Search the web
+bing = BingAPIV2()
+results = bing.search("climate change data")
+
+# Process images from results
+image_tool = ImageCaptionTool()
+for result in results:
+    if 'image_url' in result:
+        caption = image_tool.caption(result['image_url'])
+        print(f"Image: {caption}")
+
+# Transcribe audio content
+audio_tool = Audio2TextTool()
+with open("podcast.mp3", "rb") as audio:
+    transcript = audio_tool.caption(audio)
+    print(f"Transcript: {transcript}")
+```
+
+### Web Research Pipeline
+
+```python
+bing = BingAPIV2()
+
+# Search for information
+results = bing.search("quantum computing applications", top_k=5)
+
+# Load and process each page
+for result in results:
+    page_content = bing.load_page(result['url'])
+    
+    # Get relevant excerpts
+    relevant = bing.attended_loaded_page(
+        page_content,
+        "practical applications of quantum computing"
+    )
+    
+    # Generate summary
+    summary = bing.summarize_loaded_page(page_content)
+    
+    print(f"URL: {result['url']}")
+    print(f"Summary: {summary}")
+    print(f"Relevant content: {relevant}")
+```
+
+## Configuration Requirements
+
+All API tools require appropriate API keys to be set as environment variables:
+
+```bash
+# OpenAI (for Audio2Text and ImageCaption)
+OPENAI_API_KEY=your_openai_key
+OPENAI_ORGANIZATION=your_org_id
+
+# Bing Search API
+BING_SUBSCRIPTION_KEY=your_bing_key
+
+# WolframAlpha
+WOLFRAMALPHA_APP_ID=your_wolfram_app_id
+```
+
+## Best Practices
+
+1. **API Key Security**: Store API keys in `.env` files, never commit them to version control
+2. **Rate Limiting**: Implement appropriate delays between API calls to respect rate limits
+3. **Error Handling**: Always handle API failures gracefully with try-catch blocks
+4. **Retry Logic**: Use the built-in retry mechanisms (e.g., `max_retry` in BingAPIV2)
+5. **Cost Management**: Monitor API usage to control costs, especially for OpenAI services
+
+## Notes
+
+- API tools require active internet connection and valid API credentials
+- OpenAI-based tools (Audio2Text, ImageCaption) incur usage costs
+- Bing Search API has rate limits and quotas depending on subscription tier
+- WolframAlpha queries may take longer for complex computational problems

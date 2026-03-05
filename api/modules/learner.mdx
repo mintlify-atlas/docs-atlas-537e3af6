@@ -1,0 +1,285 @@
+---
+title: 'SelfLearner'
+description: 'Design educational courses for self-improvement'
+---
+
+## Overview
+
+The `SelfLearner` class represents a self-learning module that designs educational courses based on given parameters. It extends the `BaseModule` class and provides capabilities for the system to learn new skills and improve over time.
+
+This module is responsible for creating structured learning paths that enable OS-Copilot to acquire new capabilities by studying software documentation, API references, and example code.
+
+## Class Definition
+
+```python
+class SelfLearner(BaseModule)
+```
+
+**Location:** `oscopilot/modules/learner/self_learner.py:5`
+
+### Constructor
+
+```python
+def __init__(self, prompt, tool_manager)
+```
+
+<ParamField path="prompt" type="dict" required>
+  Dictionary containing system and user prompts for course design generation
+</ParamField>
+
+<ParamField path="tool_manager" type="object" required>
+  Instance of the tool manager to handle external tool interactions
+</ParamField>
+
+### Attributes
+
+<ResponseField name="prompt" type="dict">
+  Contains the necessary prompts for generating the course design. Includes keys like:
+  - `_SYSTEM_COURSE_DESIGN_PROMPT`: System-level instructions for course design
+  - `_USER_COURSE_DESIGN_PROMPT`: User-level template for course design requests
+</ResponseField>
+
+<ResponseField name="tool_manager" type="object">
+  Manages interactions with external tools needed for course design and learning
+</ResponseField>
+
+<ResponseField name="course" type="dict">
+  A dictionary to store course details that are generated based on user and system inputs. This is populated by the `design_course()` method
+</ResponseField>
+
+## Methods
+
+### design_course()
+
+Designs a course based on specified software and content parameters and stores it in the course attribute.
+
+```python
+def design_course(self, software_name, package_name, demo_file_path, file_content=None, prior_course=None)
+```
+
+**Location:** `oscopilot/modules/learner/self_learner.py:28`
+
+This method uses system and user prompts to create a conversation with a language model, generating a structured course based around the provided parameters. The response is then parsed into JSON format and saved in the `course` attribute.
+
+<ParamField path="software_name" type="str" required>
+  The name of the software around which the course is centered (e.g., "Microsoft Excel", "Python pandas")
+</ParamField>
+
+<ParamField path="package_name" type="str" required>
+  The name of the software package relevant to the course (e.g., "openpyxl", "pandas")
+</ParamField>
+
+<ParamField path="demo_file_path" type="str" required>
+  Path to the demo file that will be used in the course for practical exercises
+</ParamField>
+
+<ParamField path="file_content" type="str" default="None">
+  The content of the file that will be demonstrated or used in the course. Can include example code, documentation, or data
+</ParamField>
+
+<ParamField path="prior_course" type="str" default="None">
+  Information about courses that have been completed previously, used to build progressive learning paths
+</ParamField>
+
+**Returns:**
+- `dict`: A dictionary containing the designed course details, including:
+  - Course objectives
+  - Learning modules
+  - Practice exercises
+  - Prerequisites
+  - Expected outcomes
+
+**Side Effects:**
+- Updates the `self.course` attribute with the generated course structure
+
+**Example:**
+
+```python
+from oscopilot.modules.learner import SelfLearner
+
+# Initialize the learner
+prompt_config = {
+    '_SYSTEM_COURSE_DESIGN_PROMPT': '...',
+    '_USER_COURSE_DESIGN_PROMPT': '...'
+}
+learner = SelfLearner(
+    prompt=prompt_config,
+    tool_manager=tool_manager_instance
+)
+
+# Design a course for learning pandas
+course = learner.design_course(
+    software_name="Python pandas",
+    package_name="pandas",
+    demo_file_path="/examples/data_analysis.py",
+    file_content="""
+import pandas as pd
+df = pd.read_csv('data.csv')
+print(df.describe())
+    """,
+    prior_course=None
+)
+
+print("Course Structure:")
+for module in course.get('modules', []):
+    print(f"- {module['title']}: {module['description']}")
+```
+
+## Progressive Learning
+
+The `SelfLearner` module supports progressive learning through the `prior_course` parameter. This enables the system to:
+
+1. **Build on Previous Knowledge**: Design courses that assume prerequisite knowledge from completed courses
+2. **Avoid Redundancy**: Skip topics already covered in prior courses
+3. **Create Learning Paths**: Chain multiple courses together for comprehensive skill development
+4. **Track Progress**: Maintain context about what has been learned
+
+**Example of Progressive Learning:**
+
+```python
+# First course: Basic file operations
+basic_course = learner.design_course(
+    software_name="File System",
+    package_name="os",
+    demo_file_path="/examples/file_operations.py",
+    file_content="import os\nos.listdir('.')\n",
+    prior_course=None
+)
+
+# Second course: Advanced file operations (builds on basic)
+advanced_course = learner.design_course(
+    software_name="File System",
+    package_name="pathlib",
+    demo_file_path="/examples/pathlib_operations.py",
+    file_content="from pathlib import Path\nPath('.').glob('*.txt')\n",
+    prior_course=str(basic_course)
+)
+
+# Third course: File processing (builds on both previous)
+processing_course = learner.design_course(
+    software_name="Data Processing",
+    package_name="csv",
+    demo_file_path="/examples/csv_processing.py",
+    file_content="import csv\nwith open('data.csv') as f:\n    reader = csv.DictReader(f)\n",
+    prior_course=str(advanced_course)
+)
+```
+
+## Course Structure
+
+The dictionary returned by `design_course()` typically contains:
+
+```json
+{
+  "course_title": "Introduction to pandas Data Analysis",
+  "software": "Python pandas",
+  "package": "pandas",
+  "prerequisites": ["Python basics", "Data structures"],
+  "objectives": [
+    "Load and manipulate datasets using pandas",
+    "Perform data cleaning and transformation",
+    "Generate statistical summaries"
+  ],
+  "modules": [
+    {
+      "title": "DataFrames and Series",
+      "description": "Understanding pandas core data structures",
+      "topics": ["Creating DataFrames", "Indexing", "Selection"],
+      "exercises": [
+        {
+          "task": "Load a CSV file into a DataFrame",
+          "demo_code": "df = pd.read_csv('data.csv')"
+        }
+      ]
+    },
+    {
+      "title": "Data Operations",
+      "description": "Manipulating and transforming data",
+      "topics": ["Filtering", "Grouping", "Aggregation"],
+      "exercises": [
+        {
+          "task": "Calculate mean values by category",
+          "demo_code": "df.groupby('category')['value'].mean()"
+        }
+      ]
+    }
+  ],
+  "expected_outcomes": [
+    "Ability to load and inspect datasets",
+    "Proficiency in basic data operations",
+    "Understanding of pandas syntax and idioms"
+  ]
+}
+```
+
+## Integration with OS-Copilot
+
+The `SelfLearner` module integrates with other OS-Copilot components:
+
+### With Tool Manager
+- Accesses tool documentation and examples
+- Stores learned skills as new tools
+- Retrieves similar tools for reference
+
+### With Executor
+- Generates practice code for exercises
+- Tests learned skills through execution
+- Validates understanding through practical tasks
+
+### With Planner
+- Creates learning task graphs
+- Structures course modules as task dependencies
+- Ensures logical progression of topics
+
+## Use Cases
+
+### 1. Learning New Software APIs
+
+```python
+# Learn to use a new library
+course = learner.design_course(
+    software_name="requests",
+    package_name="requests",
+    demo_file_path="/docs/requests_quickstart.py",
+    file_content=open("/docs/requests_quickstart.py").read()
+)
+```
+
+### 2. Adapting to New OS Features
+
+```python
+# Learn new operating system capabilities
+course = learner.design_course(
+    software_name="Windows PowerShell",
+    package_name="powershell",
+    demo_file_path="/examples/powershell_basics.ps1",
+    file_content="Get-Process | Where-Object {$_.CPU -gt 100}"
+)
+```
+
+### 3. Improving Tool Usage
+
+```python
+# Enhance understanding of an existing tool
+course = learner.design_course(
+    software_name="Git",
+    package_name="git",
+    demo_file_path="/examples/git_advanced.sh",
+    file_content="git rebase -i HEAD~3",
+    prior_course="Git Basics Course"
+)
+```
+
+## Self-Improvement Workflow
+
+The typical workflow for self-improvement using the `SelfLearner`:
+
+1. **Identify Knowledge Gap**: System encounters an unfamiliar API or tool
+2. **Gather Resources**: Collect documentation, examples, and demo files
+3. **Design Course**: Use `design_course()` to create a structured learning path
+4. **Execute Exercises**: Practice with the examples in the course
+5. **Validate Learning**: Test new skills on actual tasks
+6. **Store Knowledge**: Save successful patterns as new tools
+7. **Iterate**: Use prior course knowledge to learn advanced topics
+
+This enables OS-Copilot to continuously expand its capabilities and adapt to new software environments autonomously.

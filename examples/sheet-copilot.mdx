@@ -1,0 +1,512 @@
+---
+title: "SheetCopilot Agent"
+description: "Specialized agent for automating Excel and spreadsheet tasks"
+---
+
+SheetCopilot is a specialized FRIDAY agent designed specifically for Excel and spreadsheet automation. It can handle complex spreadsheet tasks including formulas, formatting, pivot tables, charts, and data manipulation.
+
+## Overview
+
+SheetCopilot provides:
+- **Excel task automation** from natural language instructions
+- **Complex operations** including pivot tables, charts, and conditional formatting
+- **Multi-sheet workbooks** with data relationships
+- **Batch processing** for multiple tasks
+
+## Installation
+
+SheetCopilot uses the standard OS-Copilot installation:
+
+```bash
+conda create -n oscopilot_env python=3.10 -y
+conda activate oscopilot_env
+cd OS-Copilot
+pip install -e .
+```
+
+## Basic Usage
+
+SheetCopilot runs tasks from a JSONL task file:
+
+```python
+from oscopilot import FridayAgent
+from oscopilot import FridayExecutor, FridayPlanner, FridayRetriever, ToolManager
+from oscopilot.utils import setup_config, SheetTaskLoader
+
+# Load configuration
+args = setup_config()
+
+# Load sheet tasks
+sheet_task_loader = SheetTaskLoader("examples/SheetCopilot/sheet_task.jsonl")
+
+# Initialize agent
+agent = FridayAgent(
+    FridayPlanner, 
+    FridayRetriever, 
+    FridayExecutor, 
+    ToolManager, 
+    config=args
+)
+
+# Run specific task by ID
+if args.sheet_task_id:
+    task = sheet_task_loader.get_data_by_task_id(args.sheet_task_id)
+    agent.run(task)
+else:
+    # Run all tasks
+    task_lst = sheet_task_loader.load_sheet_task_dataset()
+    for task_id, task in enumerate(task_lst):
+        args.sheet_task_id = task_id
+        agent.run(task)
+```
+
+See `examples/SheetCopilot/run_sheet_task.py` for the complete implementation.
+
+## Running Sheet Tasks
+
+### Single Task Execution
+
+```bash
+python examples/SheetCopilot/run_sheet_task.py --sheet_task_id 0
+```
+
+### Batch Execution
+
+```bash
+python examples/SheetCopilot/run_sheet_task.py
+```
+
+## Task Format
+
+Sheet tasks are defined in JSONL format with the following structure:
+
+```json
+{
+  "Sheet Name": "BoomerangSales",
+  "No.": 3,
+  "Context": "My workbook has two tables. Sheet 'Sheet1' records the sales of a boomerang company. Sheet 'Retail Price' lists the retail prices for all products.",
+  "Instructions": "Count the number of each Product and put the results in a new sheet.",
+  "Categories": "Entry and manipulation, Formula",
+  "Atomic actions": "Create sheet, Update cell value (2), Autofill (2), Statistical functions",
+  "file_path": "examples/SheetCopilot/sheets/BoomerangSales.xlsx"
+}
+```
+
+## Example Tasks
+
+### Data Analysis and Formulas
+
+<AccordionGroup>
+
+<Accordion title="Count Products by Category">
+
+**Context**: Workbook has sales data with product names and categories.
+
+**Instructions**: Count the number of each Product and put the results in a new sheet.
+
+**Expected Operations**:
+- Create new sheet
+- Use COUNTIF formula
+- Autofill formulas
+- Format results
+
+```python
+task = sheet_task_loader.get_data_by_task_id(0)
+agent.run(task)
+```
+
+</Accordion>
+
+<Accordion title="Calculate Gross Profit">
+
+**Context**: Accounting data with formula: Gross Profit = Net Sales - Cost of Goods Sold
+
+**Instructions**: Fill the Gross Profit column and highlight cells above average with green background.
+
+**Expected Operations**:
+- Calculate using formula
+- Apply conditional formatting
+- Statistical comparison
+
+```python
+task = {
+    "Context": "Workbook records yearly accounting data. Gross Profit = Net Sales - COGS",
+    "Instructions": "Fill Gross Profit column and highlight above-average cells green",
+    "file_path": "examples/SheetCopilot/sheets/IncomeStatement.xlsx"
+}
+agent.run(task)
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+### Pivot Tables and Charts
+
+<AccordionGroup>
+
+<Accordion title="Create GDP Summary">
+
+**Context**: Economic indicators across countries and years.
+
+**Instructions**: Display only "Gross Domestic Product (GDP)" values. Create a summary table in a new sheet showing all indicators of each country for 2013.
+
+**Expected Operations**:
+- Filter data
+- Create new sheet
+- Create pivot table
+- Summarize by country
+
+```python
+task = sheet_task_loader.get_data_by_task_id(2)
+agent.run(task)
+```
+
+</Accordion>
+
+<Accordion title="Sales Trend Chart">
+
+**Context**: Weekly sales data for tax computation.
+
+**Instructions**: Plot a line chart with X-axis showing the week and Y-axis showing the sales. Set axis titles from column headers.
+
+**Expected Operations**:
+- Create line chart
+- Configure axes
+- Set titles from data
+
+```python
+task = {
+    "Context": "Weekly sales data in columns",
+    "Instructions": "Plot line chart with week vs sales, use column headers as titles",
+    "file_path": "examples/SheetCopilot/sheets/Tax.xlsx"
+}
+agent.run(task)
+```
+
+</Accordion>
+
+<Accordion title="Revenue Bar Chart with Pivot">
+
+**Context**: Sales transactions with products and prices.
+
+**Instructions**: Calculate revenue and generate a Pivot Table summarizing revenue of each product. Create a bar chart with data labels.
+
+**Expected Operations**:
+- Calculate revenue column
+- Create pivot table
+- Generate bar chart
+- Add data labels
+
+```python
+task = sheet_task_loader.get_data_by_task_id(15)
+agent.run(task)
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+### Formatting and Styling
+
+<AccordionGroup>
+
+<Accordion title="Conditional Highlighting">
+
+**Context**: Respondent demographic information.
+
+**Instructions**: Highlight married respondents with white text and yellow fill.
+
+**Expected Operations**:
+- Apply conditional formatting
+- Set text color
+- Set fill color
+- Filter by criteria
+
+```python
+task = {
+    "Context": "Demographics with marital status column",
+    "Instructions": "Highlight married with white text, yellow fill",
+    "file_path": "examples/SheetCopilot/sheets/DemographicProfile.xlsx"
+}
+agent.run(task)
+```
+
+</Accordion>
+
+<Accordion title="Accounting Number Format">
+
+**Context**: Income statement with calculated values.
+
+**Instructions**: Fill Gross Profit column and set results as accounting type.
+
+**Expected Operations**:
+- Calculate values
+- Apply accounting number format
+- Set decimal places
+- Add currency symbol
+
+```python
+task = {
+    "Context": "Financial data requiring accounting format",
+    "Instructions": "Calculate gross profit, format as accounting type",
+    "file_path": "examples/SheetCopilot/sheets/IncomeStatement2.xlsx"
+}
+agent.run(task)
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+### Data Management
+
+<AccordionGroup>
+
+<Accordion title="Sort and Filter">
+
+**Context**: Demographic data with multiple columns.
+
+**Instructions**: Sort the data by the Sex column from A to Z.
+
+**Expected Operations**:
+- Select data range
+- Apply sort by column
+- Maintain row integrity
+
+```python
+task = {
+    "Context": "Respondent information table",
+    "Instructions": "Sort by Sex column A to Z",
+    "file_path": "examples/SheetCopilot/sheets/DemographicProfile.xlsx"
+}
+agent.run(task)
+```
+
+</Accordion>
+
+<Accordion title="Copy and Reorganize">
+
+**Context**: Invoice data across multiple columns.
+
+**Instructions**: Copy Product column to new sheet 'Sheet2' and sort in ascending order.
+
+**Expected Operations**:
+- Create new sheet
+- Copy column data
+- Apply sort
+- Remove duplicates if needed
+
+```python
+task = sheet_task_loader.get_data_by_task_id(9)
+agent.run(task)
+```
+
+</Accordion>
+
+<Accordion title="Extract and Transform">
+
+**Context**: Date column with full timestamps.
+
+**Instructions**: Create new "Day" column between A and B to extract day from Date. Summarize average roll number per day in new sheet.
+
+**Expected Operations**:
+- Insert column
+- Use date functions
+- Create new sheet
+- Calculate averages
+- Create summary table
+
+```python
+task = sheet_task_loader.get_data_by_task_id(17)
+agent.run(task)
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+## Task Categories
+
+SheetCopilot handles diverse operation types:
+
+<CardGroup cols={2}>
+
+<Card title="Entry and Manipulation" icon="pen-to-square">
+- Create/delete sheets
+- Update cell values
+- Copy-paste operations
+- Insert/delete rows/columns
+- Autofill formulas
+</Card>
+
+<Card title="Formulas" icon="calculator">
+- Math functions
+- Statistical functions
+- Logical functions
+- Date/time functions
+- Text functions
+- Lookup functions
+</Card>
+
+<Card title="Formatting" icon="palette">
+- Set data types
+- Number formats
+- Cell colors and fonts
+- Borders and alignment
+- Conditional formatting
+- Merge cells
+</Card>
+
+<Card title="Charts" icon="chart-line">
+- Line charts
+- Bar/column charts
+- Pie charts
+- Scatter plots
+- Chart axes and titles
+- Data labels and legends
+</Card>
+
+<Card title="Pivot Tables" icon="table">
+- Create pivot tables
+- Configure rows/columns
+- Aggregate functions
+- Pivot charts
+- Filters and slicers
+</Card>
+
+<Card title="Management" icon="list-check">
+- Sort data
+- Filter rows
+- Find and replace
+- Data validation
+- Set hyperlinks
+</Card>
+
+</CardGroup>
+
+## Dataset Structure
+
+The SheetCopilot examples include:
+
+```bash
+examples/SheetCopilot/
+├── run_sheet_task.py          # Main execution script
+├── sheet_task.jsonl           # Task definitions (20 samples)
+├── dataset_20Samples.xlsx     # Combined dataset
+├── sheets/                    # Individual workbooks
+│   ├── BoomerangSales.xlsx
+│   ├── DemographicProfile.xlsx
+│   ├── EasyGDPBreakdown.xlsx
+│   ├── IncomeStatement.xlsx
+│   ├── IncomeStatement2.xlsx
+│   ├── Tax.xlsx
+│   ├── PricingTable.xlsx
+│   ├── Dragging.xlsx
+│   ├── EntireShippingCosts.xlsx
+│   ├── Invoices.xlsx
+│   ├── StockChange.xlsx
+│   ├── EntireSummerSales.xlsx
+│   └── SimpleCompoundInterest.xlsx
+└── sheets_ans/                # Expected results
+```
+
+## Agent Architecture
+
+SheetCopilot uses the full FRIDAY agent architecture:
+
+```python
+agent = FridayAgent(
+    FridayPlanner,      # Plans task decomposition
+    FridayRetriever,    # Retrieves relevant tools
+    FridayExecutor,     # Executes Excel operations
+    ToolManager,        # Manages tool access
+    config=args
+)
+```
+
+### Component Roles
+
+- **FridayPlanner**: Breaks down complex spreadsheet tasks into atomic operations
+- **FridayRetriever**: Finds appropriate Excel functions and operations
+- **FridayExecutor**: Executes Excel commands using Python libraries (openpyxl, pandas, etc.)
+- **ToolManager**: Provides access to Excel manipulation tools
+
+## Loading Tasks
+
+The `SheetTaskLoader` utility loads and parses task files:
+
+```python
+from oscopilot.utils import SheetTaskLoader
+
+# Load all tasks
+loader = SheetTaskLoader("examples/SheetCopilot/sheet_task.jsonl")
+tasks = loader.load_sheet_task_dataset()
+
+# Load specific task
+task = loader.get_data_by_task_id(5)
+
+print(f"Task {task['No.']}: {task['Instructions']}")
+print(f"File: {task['file_path']}")
+print(f"Categories: {task['Categories']}")
+```
+
+## Complex Example: Multi-Sheet Analysis
+
+```python
+task = {
+    "Sheet Name": "BoomerangSales",
+    "Context": "Workbook has two sheets: 'Sheet1' with sales transactions and 'Retail Price' with product pricing.",
+    "Instructions": "Calculate revenue, generate Pivot Table summarizing revenue by product in new sheet, and create bar chart with data labels.",
+    "Categories": "Entry and manipulation, Formula, Pivot Table, Charts",
+    "file_path": "examples/SheetCopilot/sheets/BoomerangSales.xlsx"
+}
+
+# Agent will:
+# 1. Open workbook and analyze structure
+# 2. Calculate revenue = quantity * price (using VLOOKUP)
+# 3. Create new sheet for results
+# 4. Generate pivot table grouping by product
+# 5. Create bar chart from pivot data
+# 6. Add data labels to bars
+# 7. Save workbook
+
+agent.run(task)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+
+<Card title="Clear Context" icon="book">
+Provide complete workbook structure including sheet names and data layout in the context.
+</Card>
+
+<Card title="Explicit Instructions" icon="list">
+Be specific about formulas, formatting, and output location (e.g., "in a new sheet").
+</Card>
+
+<Card title="Formula Clarity" icon="calculator">
+Include necessary formulas in context (e.g., "Gross Profit = Revenue - COGS").
+</Card>
+
+<Card title="Validation" icon="circle-check">
+Check `sheets_ans/` directory for expected results to validate agent output.
+</Card>
+
+</CardGroup>
+
+## Limitations
+
+<Note>
+- Currently focused on Excel/spreadsheet tasks
+- Requires tasks in specific JSONL format
+- Works best with clearly defined atomic operations
+- Complex VBA macros not supported
+</Note>
+
+## Related
+
+- [Excel Automation Tutorial](/examples/excel-automation) - Detailed Excel automation guide
+- [Light FRIDAY](/examples/friday) - General-purpose agent
+- [Adding Tools](/guides/adding-tools) - Extend SheetCopilot with custom tools

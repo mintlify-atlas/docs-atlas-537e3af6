@@ -1,0 +1,547 @@
+---
+title: Tools
+description: Understanding the tool system, repository, and management in OS-Copilot
+---
+
+## Overview
+
+OS-Copilot's tool system enables the framework to leverage pre-built functionality, learn from successful executions, and continuously improve its capabilities. Tools are organized into a searchable repository with vector-based retrieval.
+
+## Tool Types
+
+OS-Copilot supports multiple tool types:
+
+<CardGroup cols={3}>
+  <Card title="Basic Tools" icon="toolbox">
+    Pre-built utilities for common operations
+  </Card>
+  <Card title="API Tools" icon="cloud">
+    Wrappers for external services and APIs
+  </Card>
+  <Card title="Generated Tools" icon="wand-magic-sparkles">
+    User-created tools stored from successful executions
+  </Card>
+</CardGroup>
+
+## Tool Repository Structure
+
+```
+tool_repository/
+├── basic_tools/
+│   ├── __init__.py
+│   └── text_extractor.py
+├── api_tools/
+│   ├── audio2text/
+│   ├── bing/
+│   ├── image_caption/
+│   └── wolfram_alpha/
+├── generated_tools/
+│   ├── tool_code/
+│   │   ├── create_folder.py
+│   │   └── generate_chart.py
+│   ├── tool_description/
+│   │   ├── create_folder.txt
+│   │   └── generate_chart.txt
+│   ├── vectordb/
+│   └── generated_tools.json
+└── manager/
+    ├── tool_manager.py
+    └── action_node.py
+```
+
+## Basic Tools
+
+Basic tools provide fundamental functionality:
+
+<Accordion title="TextExtractor Example">
+```python
+# From text_extractor.py:5-18
+class TextExtractor:
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
+        self.prompt = prompt['text_extract_prompt']
+    
+    def extract_file_content(self, file_path):
+        """
+        Extract the content of the file.
+        """
+        extract_task = self.prompt.format(file_path=file_path)
+        self.agent.run(extract_task)
+        file_content = list(self.agent.planner.tool_node.values())[-1].return_val
+        return file_content
+```
+
+**Purpose**: Extracts text content from files using the agent's execution pipeline.
+</Accordion>
+
+## API Tools
+
+API tools integrate external services:
+
+<Tabs>
+  <Tab title="Bing Search">
+    ```python
+    # Bing web search and image search capabilities
+    tool_repository/api_tools/bing/
+    ├── bing_api_v2.py       # Web search
+    ├── image_search_api.py  # Image search
+    └── bing_service.py      # Service wrapper
+    ```
+    
+    **Capabilities**:
+    - Web search with result filtering
+    - Image search with metadata
+    - Content loading from URLs
+  </Tab>
+  
+  <Tab title="Audio to Text">
+    ```python
+    # Speech recognition and transcription
+    tool_repository/api_tools/audio2text/
+    ├── audio2text.py         # Core functionality
+    └── audio2text_service.py # Service integration
+    ```
+    
+    **Capabilities**:
+    - Audio file transcription
+    - Multiple format support
+  </Tab>
+  
+  <Tab title="Image Caption">
+    ```python
+    # Image understanding using GPT-4V
+    tool_repository/api_tools/image_caption/
+    ├── gpt4v_caption.py           # GPT-4V integration
+    └── image_caption_service.py   # Service wrapper
+    ```
+    
+    **Capabilities**:
+    - Image description generation
+    - Visual question answering
+  </Tab>
+  
+  <Tab title="Wolfram Alpha">
+    ```python
+    # Computational knowledge engine
+    tool_repository/api_tools/wolfram_alpha/
+    ├── wolfram_alpha.py  # API integration
+    └── test.py          # Usage examples
+    ```
+    
+    **Capabilities**:
+    - Mathematical computations
+    - Factual queries
+    - Unit conversions
+  </Tab>
+</Tabs>
+
+## Generated Tools
+
+Generated tools are created from successful task executions and stored for reuse.
+
+### Tool Storage Format
+
+Each generated tool consists of:
+
+1. **Python Code** (`tool_code/{name}.py`)
+2. **Description** (`tool_description/{name}.txt`)
+3. **Metadata** (`generated_tools.json`)
+4. **Vector Embedding** (in Chroma DB)
+
+<Accordion title="Example Generated Tool">
+```python
+# tool_code/create_folder.py
+import os
+
+class create_folder:
+    """
+    Create a folder under the default working directory
+    """
+    def __init__(self):
+        self._description = "Create a folder under the default working directory."
+
+    def __call__(self, working_directory=None, folder_name='myfold', *args, **kwargs):
+        """
+        Create a folder under the specified working directory or the default working directory.
+
+        Args:
+        working_directory (str): The path of the working directory. If not provided, the default working directory will be used.
+        folder_name (str): The name of the folder to be created. Default is 'myfold'.
+
+        Returns:
+        None
+        """
+        if working_directory:
+            os.chdir(working_directory)
+        
+        os.makedirs(folder_name)
+```
+
+```json
+// generated_tools.json entry
+{
+  "create_folder": {
+    "code": "...",
+    "description": "Create a folder under the default working directory"
+  }
+}
+```
+</Accordion>
+
+## Tool Manager
+
+The `ToolManager` class orchestrates all tool operations:
+
+### Initialization
+
+```python
+# From tool_manager.py:52-83
+class ToolManager:
+    def __init__(self, generated_tool_repo_dir=None):
+        self.generated_tools = {}
+        self.generated_tool_repo_dir = generated_tool_repo_dir
+        
+        # Load existing tools
+        with open(f"{self.generated_tool_repo_dir}/generated_tools.json") as f2:
+            self.generated_tools = json.load(f2)
+        
+        self.vectordb_path = f"{generated_tool_repo_dir}/vectordb"
+        
+        if not os.path.exists(self.vectordb_path):
+            os.makedirs(self.vectordb_path)
+        
+        os.makedirs(f"{generated_tool_repo_dir}/tool_code", exist_ok=True)
+        os.makedirs(f"{generated_tool_repo_dir}/tool_description", exist_ok=True)
+        
+        # Initialize vector database
+        if EMBED_MODEL_TYPE == "OpenAI":
+            embedding_function = OpenAIEmbeddings(
+                openai_api_key=OPENAI_API_KEY,
+                openai_organization=OPENAI_ORGANIZATION,
+            )
+        elif EMBED_MODEL_TYPE == "OLLAMA":
+            embedding_function = OllamaEmbeddings(model=EMBED_MODEL_NAME)
+        
+        self.vectordb = Chroma(
+            collection_name="tool_vectordb",
+            embedding_function=embedding_function,
+            persist_directory=self.vectordb_path,
+        )
+        
+        # Verify synchronization
+        assert self.vectordb._collection.count() == len(self.generated_tools), (
+            f"Tool Manager's vectordb is not synced with generated_tools.json.\n"
+            f"There are {self.vectordb._collection.count()} tools in vectordb but {len(self.generated_tools)} tools in generated_tools.json.\n"
+        )
+```
+
+<Note>
+The Tool Manager ensures the vector database and JSON metadata remain synchronized at all times.
+</Note>
+
+### Core Operations
+
+<Tabs>
+  <Tab title="Add Tool">
+    ```python
+    # From tool_manager.py:155-208
+    def add_new_tool(self, info):
+        """
+        Adds a new tool to the tool manager, including updating the vector database
+        and tool repository with the provided information.
+        """
+        program_name = info["task_name"]
+        program_code = info["code"]
+        program_description = info["description"]
+        
+        print(f"\033[33m {program_name}:\n{program_description}\033[0m")
+        
+        # If tool already exists, delete and rewrite
+        if program_name in self.generated_tools:
+            print(f"\033[33mTool {program_name} already exists. Rewriting!\033[0m")
+            self.vectordb._collection.delete(ids=[program_name])
+        
+        # Store in vector database
+        self.vectordb.add_texts(
+            texts=[program_description],
+            ids=[program_name],
+            metadatas=[{"name": program_name}],
+        )
+        
+        # Store in memory
+        self.generated_tools[program_name] = {
+            "code": program_code,
+            "description": program_description,
+        }
+        
+        # Verify synchronization
+        assert self.vectordb._collection.count() == len(self.generated_tools), \
+            "vectordb is not synced with generated_tools.json"
+        
+        # Persist to disk
+        with open(f"{self.generated_tool_repo_dir}/tool_code/{program_name}.py", "w") as fa:
+            fa.write(program_code)
+        with open(f"{self.generated_tool_repo_dir}/tool_description/{program_name}.txt", "w") as fb:
+            fb.write(program_description)
+        with open(f"{self.generated_tool_repo_dir}/generated_tools.json", "w") as fc:
+            json.dump(self.generated_tools, fc, indent=4)
+        
+        self.vectordb.persist()
+    ```
+  </Tab>
+  
+  <Tab title="Retrieve Tool">
+    ```python
+    # From tool_manager.py:226-258
+    def retrieve_tool_name(self, query, k=10):
+        """
+        Retrieves related tool names based on a similarity search against a query.
+        """
+        k = min(self.vectordb._collection.count(), k)
+        if k == 0:
+            return []
+        
+        print(f"\033[33mTool Manager retrieving for {k} Tools\033[0m")
+        
+        # Retrieve descriptions of the top k related tasks
+        docs_and_scores = self.vectordb.similarity_search_with_score(query, k=k)
+        
+        print(f"\033[33mTool Manager retrieved tools: "
+              f"{', '.join([doc.metadata['name'] for doc, _ in docs_and_scores])}\033[0m")
+        
+        tool_name = []
+        for doc, _ in docs_and_scores:
+            tool_name.append(doc.metadata["name"])
+        
+        return tool_name
+    ```
+    
+    **How it works**:
+    1. Embed query using configured embedding model
+    2. Perform cosine similarity search in Chroma
+    3. Return top-k tool names sorted by relevance
+  </Tab>
+  
+  <Tab title="Delete Tool">
+    ```python
+    # From tool_manager.py:301-355
+    def delete_tool(self, tool):
+        """
+        Deletes all information related to a specified tool from the tool manager.
+        """
+        # Delete from vector database
+        if tool in self.generated_tools:
+            self.vectordb._collection.delete(ids=[tool])
+            print(f"\033[33m delete {tool} from vectordb successfully! \033[0m")
+        
+        # Delete from generated_tools.json
+        with open(f"{self.generated_tool_repo_dir}/generated_tools.json", "r") as file:
+            tool_infos = json.load(file)
+        if tool in tool_infos:
+            del tool_infos[tool]
+        with open(f"{self.generated_tool_repo_dir}/generated_tools.json", "w") as file:
+            json.dump(tool_infos, file, indent=4)
+            print(f"\033[33m delete {tool} info from JSON successfully! \033[0m")
+        
+        # Delete code file
+        code_path = f"{self.generated_tool_repo_dir}/tool_code/{tool}.py"
+        if os.path.exists(code_path):
+            os.remove(code_path)
+            print(f"\033[33m delete {tool} code successfully! \033[0m")
+        
+        # Delete description file
+        description_path = f"{self.generated_tool_repo_dir}/tool_description/{tool}.txt"
+        if os.path.exists(description_path):
+            os.remove(description_path)
+            print(f"\033[33m delete {tool} description txt successfully! \033[0m")
+    ```
+  </Tab>
+</Tabs>
+
+## Using Tools in Agents
+
+### Automatic Tool Discovery
+
+When the agent receives a task, it automatically:
+
+1. **Retrieves relevant tools** based on task description
+2. **Provides tool descriptions** to the Planner for decomposition
+3. **Retrieves tool code** as examples for the Executor
+
+```python
+# From friday_agent.py:129-151
+def planning(self, task):
+    # Step 1: Retrieve relevant tool names
+    retrieve_tool_name = self.retriever.retrieve_tool_name(task)
+    
+    # Step 2: Get tool descriptions
+    retrieve_tool_description_pair = self.retriever.retrieve_tool_description_pair(
+        retrieve_tool_name
+    )
+
+    # Step 3: Decompose task using available tools
+    try:
+        self.planner.decompose_task(task, retrieve_tool_description_pair)
+    except Exception as e:
+        print(f"api call failed: {str(e)}")
+        return
+    
+    return self.planner.sub_task_list
+```
+
+### Manual Tool Management
+
+You can also manage tools via command line:
+
+<Tabs>
+  <Tab title="Add Tool">
+    ```bash
+    python -m oscopilot.tool_repository.manager.tool_manager \
+      --add \
+      --tool_name my_custom_tool \
+      --tool_path /path/to/tool.py \
+      --generated_tool_repo_path oscopilot/tool_repository/generated_tools
+    ```
+  </Tab>
+  
+  <Tab title="Delete Tool">
+    ```bash
+    python -m oscopilot.tool_repository.manager.tool_manager \
+      --delete \
+      --tool_name my_custom_tool \
+      --generated_tool_repo_path oscopilot/tool_repository/generated_tools
+    ```
+  </Tab>
+</Tabs>
+
+## Tool Quality Control
+
+OS-Copilot implements quality control for stored tools:
+
+### Scoring System
+
+Each successfully executed tool receives a score (0.0 to 1.0):
+
+```python
+# From friday_agent.py:119-121
+if node_type == 'Python' and isTaskCompleted and score >= self.score:
+    self.executor.store_tool(tool_name, code)
+    print(f"{tool_name} has been stored in the tool repository.")
+```
+
+**Criteria for storage**:
+- Task must complete successfully
+- Score must meet or exceed threshold (configurable)
+- Only Python tools are stored (Shell/AppleScript are task-specific)
+
+### Score Calculation
+
+The judge module evaluates:
+- **Correctness**: Does the output match expectations?
+- **Efficiency**: Is the approach optimal?
+- **Robustness**: Does it handle edge cases?
+
+## Vector Database Details
+
+### Embedding Model
+
+OS-Copilot supports multiple embedding providers:
+
+<CardGroup cols={2}>
+  <Card title="OpenAI" icon="openai">
+    Uses `text-embedding-ada-002` model
+  </Card>
+  <Card title="Ollama" icon="server">
+    Local embeddings with configurable model
+  </Card>
+</CardGroup>
+
+**Configuration**:
+```python
+# .env file
+MODEL_TYPE=OpenAI  # or OLLAMA
+MODEL_NAME=text-embedding-ada-002  # for OpenAI
+# MODEL_NAME=llama2  # for Ollama
+```
+
+### Search Strategy
+
+The retriever uses cosine similarity search:
+
+1. **Query Embedding**: Task description is embedded
+2. **Similarity Calculation**: Compare with all tool embeddings
+3. **Top-K Selection**: Return k most similar tools
+4. **Filtering**: Optional post-processing based on task context
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Writing Good Tool Descriptions">
+    Good tool descriptions improve retrieval accuracy:
+    
+    ```python
+    # Good description
+    """
+    Create a bar chart from CSV data with customizable colors and labels
+    """
+    
+    # Poor description
+    """
+    Makes chart
+    """
+    ```
+    
+    **Tips**:
+    - Be specific about functionality
+    - Include key parameters and use cases
+    - Use consistent terminology
+  </Accordion>
+  
+  <Accordion title="Tool Naming Conventions">
+    Use descriptive, action-oriented names:
+    
+    ```python
+    # Good names
+    create_folder
+    generate_bar_chart
+    extract_pdf_text
+    
+    # Poor names
+    tool1
+    helper
+    utility
+    ```
+  </Accordion>
+  
+  <Accordion title="Tool Modularity">
+    Create focused, single-purpose tools:
+    
+    ```python
+    # Good: Single responsibility
+    class extract_csv_data:
+        """Extract data from CSV file"""
+        pass
+    
+    class create_chart:
+        """Create chart from data"""
+        pass
+    
+    # Poor: Multiple responsibilities
+    class process_data_and_make_chart:
+        """Extract CSV and create chart"""
+        pass
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environments" icon="server" href="/concepts/environments">
+    Learn about execution environments and OS interaction
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Review the overall framework architecture
+  </Card>
+</CardGroup>

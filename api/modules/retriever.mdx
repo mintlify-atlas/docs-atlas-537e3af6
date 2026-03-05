@@ -1,0 +1,323 @@
+---
+title: 'FridayRetriever'
+description: 'Retrieve and manage tools from the tool library'
+---
+
+## Overview
+
+The `FridayRetriever` class is responsible for retrieving and managing available tools from the tool library. It extends the `BaseModule` class, focusing on the retrieval of tools based on specific prompts or queries.
+
+The retriever interacts with a language learning model (LLM) and utilizes the execution environment and tool library to fulfill its responsibilities, including tool discovery, filtering, and metadata retrieval.
+
+## Class Definition
+
+```python
+class FridayRetriever(BaseModule)
+```
+
+**Location:** `oscopilot/modules/retriever/vector_retriever.py:6`
+
+### Constructor
+
+```python
+def __init__(self, prompt, tool_manager)
+```
+
+<ParamField path="prompt" type="dict" required>
+  Dictionary containing system and user prompts for tool filtering operations
+</ParamField>
+
+<ParamField path="tool_manager" type="object" required>
+  Instance of the tool manager to handle tool library interactions
+</ParamField>
+
+### Attributes
+
+<ResponseField name="prompt" type="dict">
+  Prompt templates for LLM interactions during tool filtering
+</ResponseField>
+
+<ResponseField name="tool_manager" type="object">
+  The tool manager instance for accessing the tool library
+</ResponseField>
+
+## Methods
+
+### retrieve_tool_name()
+
+Retrieves a list of tool names relevant to the specified task.
+
+```python
+def retrieve_tool_name(self, task, k=10)
+```
+
+**Location:** `oscopilot/modules/retriever/vector_retriever.py:33`
+
+This method interacts with the tool library to retrieve names of tools that are most relevant to a given task. The number of tool names returned is limited by the parameter k.
+
+<ParamField path="task" type="str" required>
+  The task for which relevant tool names are to be retrieved
+</ParamField>
+
+<ParamField path="k" type="int" default="10">
+  The maximum number of tool names to retrieve
+</ParamField>
+
+**Returns:**
+- `list[str]`: A list of the top k tool names relevant to the specified task
+
+**Example:**
+
+```python
+retriever = FridayRetriever(prompt_config, tool_manager)
+tool_names = retriever.retrieve_tool_name(
+    task="Extract data from PDF files",
+    k=5
+)
+print(tool_names)
+# Output: ['PDFParser', 'TextExtractor', 'DocumentReader', ...]
+```
+
+---
+
+### retrieve_tool_description()
+
+Retrieves the description for a specified tool from the tool library.
+
+```python
+def retrieve_tool_description(self, tool_name)
+```
+
+**Location:** `oscopilot/modules/retriever/vector_retriever.py:80`
+
+This method queries the tool library for the description of a tool identified by its name. It is designed to fetch detailed descriptions that explain what the tool does.
+
+<ParamField path="tool_name" type="str | list[str]" required>
+  The name(s) of the tool whose description is to be retrieved. Can be a single tool name or a list of tool names
+</ParamField>
+
+**Returns:**
+- `str | list[str]`: The description(s) of the specified tool(s)
+
+**Example:**
+
+```python
+description = retriever.retrieve_tool_description("PDFParser")
+print(description)
+# Output: "Parses PDF documents and extracts structured content"
+
+# Multiple tools
+descriptions = retriever.retrieve_tool_description(["PDFParser", "TextExtractor"])
+```
+
+---
+
+### retrieve_tool_code()
+
+Retrieves the code for a specified tool from the tool library.
+
+```python
+def retrieve_tool_code(self, tool_name)
+```
+
+**Location:** `oscopilot/modules/retriever/vector_retriever.py:97`
+
+This method accesses the tool library to get the executable code associated with a tool identified by its name. This code defines how the tool is performed.
+
+<ParamField path="tool_name" type="str | list[str]" required>
+  The name(s) of the tool whose code is to be retrieved. Can be a single tool name or a list of tool names
+</ParamField>
+
+**Returns:**
+- `str | list[str]`: The code of the specified tool(s)
+
+**Example:**
+
+```python
+code = retriever.retrieve_tool_code("PDFParser")
+print(code)
+# Output: "class PDFParser:\n    def parse(self, file_path):\n        ..."
+```
+
+---
+
+### retrieve_tool_code_pair()
+
+Retrieves a mapping of tool names to their respective codes for a list of tools.
+
+```python
+def retrieve_tool_code_pair(self, retrieve_tool_name)
+```
+
+**Location:** `oscopilot/modules/retriever/vector_retriever.py:113`
+
+This method processes a list of tool names, retrieving the code for each and compiling a dictionary that maps each tool name to its code. This is useful for tasks that require both the identification and the execution details of tools.
+
+<ParamField path="retrieve_tool_name" type="list[str]" required>
+  A list of tool names for which codes are to be retrieved
+</ParamField>
+
+**Returns:**
+- `dict`: A dictionary mapping each tool name to its code
+
+**Example:**
+
+```python
+tool_names = ["PDFParser", "TextExtractor"]
+code_pairs = retriever.retrieve_tool_code_pair(tool_names)
+print(code_pairs)
+# Output: {
+#     "PDFParser": "class PDFParser:...",
+#     "TextExtractor": "class TextExtractor:..."
+# }
+```
+
+---
+
+### retrieve_tool_description_pair()
+
+Retrieves a mapping of tool names to their descriptions for a list of tools.
+
+```python
+def retrieve_tool_description_pair(self, retrieve_tool_name)
+```
+
+**Location:** `oscopilot/modules/retriever/vector_retriever.py:133`
+
+By processing a list of tool names, this method fetches their descriptions and forms a dictionary that associates each tool name with its description. This facilitates understanding the purpose and functionality of multiple tools at once.
+
+<ParamField path="retrieve_tool_name" type="list[str]" required>
+  A list of tool names for which descriptions are to be retrieved
+</ParamField>
+
+**Returns:**
+- `dict`: A dictionary mapping each tool name to its description
+
+**Example:**
+
+```python
+tool_names = ["PDFParser", "TextExtractor"]
+desc_pairs = retriever.retrieve_tool_description_pair(tool_names)
+print(desc_pairs)
+# Output: {
+#     "PDFParser": "Parses PDF documents",
+#     "TextExtractor": "Extracts text from documents"
+# }
+```
+
+---
+
+### tool_code_filter()
+
+Filters and retrieves the code for a tool relevant to the specified task.
+
+```python
+def tool_code_filter(self, tool_code_pair, task)
+```
+
+**Location:** `oscopilot/modules/retriever/vector_retriever.py:50`
+
+This method formats a message for filtering tool codes based on a given task, sends the message to the LLM for processing, and retrieves the filtered tool's code. If a tool name is successfully identified, its corresponding code is fetched from the tool library.
+
+<ParamField path="tool_code_pair" type="dict" required>
+  A dictionary mapping tool names to their codes
+</ParamField>
+
+<ParamField path="task" type="str" required>
+  The task based on which the tool code needs to be filtered
+</ParamField>
+
+**Returns:**
+- `str`: The code of the tool relevant to the specified task, or an empty string if no relevant tool is found
+
+**Example:**
+
+```python
+tool_codes = {
+    "PDFParser": "class PDFParser:...",
+    "ImageProcessor": "class ImageProcessor:...",
+    "TextExtractor": "class TextExtractor:..."
+}
+
+filtered_code = retriever.tool_code_filter(
+    tool_code_pair=tool_codes,
+    task="Extract text content from PDF documents"
+)
+print(filtered_code)
+# Output: "class PDFParser:..." (most relevant tool for the task)
+```
+
+---
+
+### delete_tool()
+
+Deletes the specified tool from the tool library.
+
+```python
+def delete_tool(self, tool)
+```
+
+**Location:** `oscopilot/modules/retriever/vector_retriever.py:20`
+
+This method calls the tool library's delete method to remove a tool by its name. It encompasses deleting the tool's code, description, parameters, and any other associated information.
+
+<ParamField path="tool" type="str" required>
+  The name of the tool to be deleted
+</ParamField>
+
+**Side Effects:**
+- Removes the tool from the tool library
+- Deletes all associated metadata and code
+
+**Example:**
+
+```python
+retriever.delete_tool("ObsoleteTool")
+```
+
+## Usage Example
+
+```python
+from oscopilot.modules.retriever import FridayRetriever
+
+# Initialize the retriever
+prompt_config = {
+    '_SYSTEM_ACTION_CODE_FILTER_PROMPT': '...',
+    '_USER_ACTION_CODE_FILTER_PROMPT': '...'
+}
+retriever = FridayRetriever(
+    prompt=prompt_config,
+    tool_manager=tool_manager_instance
+)
+
+# Retrieve relevant tools for a task
+task = "Process and analyze customer feedback from CSV files"
+relevant_tools = retriever.retrieve_tool_name(task, k=5)
+
+# Get descriptions for the tools
+tool_descriptions = retriever.retrieve_tool_description_pair(relevant_tools)
+for tool_name, description in tool_descriptions.items():
+    print(f"{tool_name}: {description}")
+
+# Get the actual code for selected tools
+tool_codes = retriever.retrieve_tool_code_pair(relevant_tools)
+
+# Filter to find the most relevant tool
+best_tool_code = retriever.tool_code_filter(
+    tool_code_pair=tool_codes,
+    task=task
+)
+
+print(f"Selected tool code:\n{best_tool_code}")
+```
+
+## Integration with Tool Manager
+
+The `FridayRetriever` relies heavily on the `tool_manager` instance for accessing the tool library:
+
+- **Vector Search**: Uses vector embeddings to find semantically similar tools
+- **Metadata Access**: Retrieves tool descriptions, code, and parameters
+- **Tool Management**: Supports adding and deleting tools from the library
+- **LLM-Assisted Filtering**: Leverages language models to select the most appropriate tool for a given task
+
+The retriever acts as an intelligent interface between the planning/execution modules and the tool library, ensuring that the most relevant tools are selected for each task.
